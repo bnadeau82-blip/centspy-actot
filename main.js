@@ -1,5 +1,5 @@
-const { Actor } = require('apify');
-
+const Apify = require('apify');
+const Actor = Apify.Actor || Apify;
 (async () => {
   await Actor.init();
 
