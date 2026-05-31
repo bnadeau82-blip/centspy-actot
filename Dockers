@@ -1,0 +1,4 @@
+FROM apify/actor-node:24
+COPY --chown=myuser:myuser . ./
+RUN npm install --omit=dev
+CMD ["node", "main.js"]
