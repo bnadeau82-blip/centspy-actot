@@ -1,4 +1,4 @@
-import { Actor } from 'apify';
+const { Actor } = require('apify');
 
 (async () => {
   await Actor.init();
