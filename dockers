@@ -14,5 +14,5 @@ RUN npm --quiet set progress=false \
  
 COPY --chown=myuser:myuser . ./
  
-CMD ["node", "main.js"]
- 
+
+CMD ["node", "--unhandled-rejections=none", "main.js"]
