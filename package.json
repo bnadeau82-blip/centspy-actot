@@ -1,0 +1,13 @@
+{
+  "name": "centspy-hd-clearance",
+  "version": "1.0.0",
+  "description": "CentSpy Home Depot Clearance Scraper",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "build": "echo ok"
+  },
+  "dependencies": {
+    "apify": "^3.0.0"
+  }
+}
