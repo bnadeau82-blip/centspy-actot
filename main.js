@@ -1,4 +1,5 @@
 const { Actor } = require('apify');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 (async () => {
   await Actor.init();
@@ -8,17 +9,12 @@ const { Actor } = require('apify');
   const zipCode = input.zipCode || input.zipcode || '';
   const maxResults = input.maxResults || 100;
 
-  const GRAPHQL_URL = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=searchModel';
+  const proxyConfiguration = await Actor.createProxyConfiguration({
+    groups: ['RESIDENTIAL'],
+    countryCode: 'US',
+  });
 
-  const HEADERS = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    'Origin': 'https://www.homedepot.com',
-    'Referer': 'https://www.homedepot.com/',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'X-Experience-Name': 'general-merchandise',
-    'X-Api-Cookies': '{"x-user-id":"guest"}',
-  };
+  const GRAPHQL_URL = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=searchModel';
 
   const query = `
   query searchModel(
@@ -101,6 +97,9 @@ const { Actor } = require('apify');
   while (true) {
     console.log('Fetching index ' + startIndex);
 
+    const proxyUrl = await proxyConfiguration.newUrl();
+    const agent = new HttpsProxyAgent(proxyUrl);
+
     const variables = {
       storeId: storeId || null,
       zipCode: zipCode || null,
@@ -117,12 +116,23 @@ const { Actor } = require('apify');
       skipDiscoveryZones: true,
     };
 
+    const HEADERS = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Origin': 'https://www.homedepot.com',
+      'Referer': 'https://www.homedepot.com/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'X-Experience-Name': 'general-merchandise',
+      'X-Api-Cookies': '{"x-user-id":"guest"}',
+    };
+
     let response;
     try {
       response = await fetch(GRAPHQL_URL, {
         method: 'POST',
         headers: HEADERS,
         body: JSON.stringify({ query, variables }),
+        agent: agent,
       });
     } catch (err) {
       console.log('Fetch error:', err.message);
