@@ -8,6 +8,7 @@
     "build": "echo ok"
   },
   "dependencies": {
-    "apify": "^3.0.0"
+    "apify": "^3.0.0",
+    "https-proxy-agent": "^7.0.0"
   }
 }
