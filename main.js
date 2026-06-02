@@ -69,8 +69,8 @@ const { Actor } = require('apify');
 
   // FIX 1: Added zip to query variables so zipcode input is actually used
   const query = `
-  query searchModel($storeId: String, $zip: String, $startIndex: Int, $pageSize: Int, $keyword: String) {
-    searchModel(keyword: $keyword, storeId: $storeId, zipcode: $zip) {
+  query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $keyword: String) {
+    searchModel(keyword: $keyword, storeId: $storeId) {
       products(startIndex: $startIndex, pageSize: $pageSize) {
         itemId
         identifiers {
@@ -89,9 +89,9 @@ const { Actor } = require('apify');
             percentageOff
           }
         }
-        inventory(storeId: $storeId) {
-          isInStock
-          quantity
+        availabilityType {
+          discontinued
+          status
         }
         location {
           aisle
@@ -122,7 +122,6 @@ const { Actor } = require('apify');
 
     const variables = {
       storeId: storeId || null,
-      zip: zipcode || null,   // FIX 1: actually pass zipcode to GraphQL
       keyword: 'clearance',
       startIndex: startIndex,
       pageSize: PAGE_SIZE,
@@ -206,8 +205,8 @@ const { Actor } = require('apify');
         dollarOff: dollarOff,   // FIX 2: now included in output
         isPenny: isPenny,
         isClearanceItem: clearancePrice !== null,
-        stock: item.inventory ? item.inventory.quantity : 0,
-        inStock: item.inventory ? item.inventory.isInStock : false,
+        stock: 0,
+        inStock: item.availabilityType ? item.availabilityType.status : false,
         aisle: item.location ? item.location.aisle : null,
         bay: item.location ? item.location.bay : null,
         sku: item.identifiers ? item.identifiers.storeSkuNumber : '',
