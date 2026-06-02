@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "apify": "^3.0.0",
-    "got-scraping": "^4.0.0"
+    "puppeteer": "^21.0.0"
   }
 }
