@@ -1,5 +1,6 @@
 const { Actor } = require('apify');
-const puppeteer = require('puppeteer');
+const tls = require('tls');
+const https = require('https');
 
 (async () => {
   try {
@@ -10,16 +11,36 @@ const puppeteer = require('puppeteer');
       groups: ['RESIDENTIAL'],
       countryCode: 'US',
     });
-    console.log('Proxy configured: RESIDENTIAL');
+    console.log('Proxy configured');
 
     const input = await Actor.getInput() || {};
-    const storeId = input.storeId || '';
+    const storeId = input.storeId || '3917';
     const zipcode = input.zipcode || '';
-    const maxResults = input.maxResults || 100;
+    const maxResults = input.maxResults || 500;
     const minDiscount = input.minDiscount || 0;
     const maxPrice = input.maxPrice || 999999;
 
     const GRAPHQL_URL = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=searchModel';
+
+    const HEADERS = {
+      'Content-Type': 'application/json',
+      'Accept': '*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Origin': 'https://www.homedepot.com',
+      'Referer': 'https://www.homedepot.com/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'X-Experience-Name': 'general-merchandise',
+      'X-Api-Cookies': JSON.stringify({ 'x-user-id': 'guest' }),
+      'X-Debug': 'false',
+      'X-Hd-Dc': 'origin',
+      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-site',
+    };
 
     const query = `
     query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $keyword: String) {
@@ -62,48 +83,76 @@ const puppeteer = require('puppeteer');
       }
     }`;
 
+    // Make a request through the proxy using Node's built-in https
+    async function makeRequest(variables) {
+      const proxyUrl = await proxyConfiguration.newUrl();
+      const proxyParsed = new URL(proxyUrl);
+      
+      return new Promise((resolve, reject) => {
+        const body = JSON.stringify({ query, variables });
+        const urlParsed = new URL(GRAPHQL_URL);
+        
+        // Connect through proxy using CONNECT tunnel
+        const proxyReq = https.request({
+          host: proxyParsed.hostname,
+          port: proxyParsed.port,
+          method: 'CONNECT',
+          path: `${urlParsed.hostname}:443`,
+          headers: {
+            'Proxy-Authorization': 'Basic ' + Buffer.from(`${proxyParsed.username}:${decodeURIComponent(proxyParsed.password)}`).toString('base64'),
+          },
+        });
+
+        proxyReq.on('connect', (res, socket) => {
+          const tlsSocket = tls.connect({
+            socket,
+            servername: urlParsed.hostname,
+            rejectUnauthorized: false,
+          });
+
+          const req = https.request({
+            createConnection: () => tlsSocket,
+            hostname: urlParsed.hostname,
+            path: urlParsed.pathname + urlParsed.search,
+            method: 'POST',
+            headers: {
+              ...HEADERS,
+              'Content-Length': Buffer.byteLength(body),
+            },
+          });
+
+          req.on('response', (response) => {
+            let data = '';
+            const chunks = [];
+            response.on('data', chunk => chunks.push(chunk));
+            response.on('end', () => {
+              try {
+                const buf = Buffer.concat(chunks);
+                const json = JSON.parse(buf.toString());
+                resolve(json);
+              } catch(e) {
+                reject(new Error('Failed to parse response: ' + e.message));
+              }
+            });
+          });
+
+          req.on('error', reject);
+          req.write(body);
+          req.end();
+        });
+
+        proxyReq.on('error', reject);
+        proxyReq.end();
+      });
+    }
+
     const PAGE_SIZE = 24;
     const allItems = [];
     let startIndex = 0;
     let totalProducts = null;
 
     console.log('Starting CentSpy HD Clearance Scraper...');
-    console.log('Store ID:', storeId || ('ZIP: ' + zipcode));
-
-    const proxyInfo = await proxyConfiguration.newProxyInfo();
-    console.log('Launching browser with residential proxy...');
-
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        `--proxy-server=${proxyInfo.hostname}:${proxyInfo.port}`,
-      ],
-    });
-
-    const page = await browser.newPage();
-    await page.authenticate({
-      username: proxyInfo.username,
-      password: proxyInfo.password,
-    });
-
-    // Set cookies from a real HD session
-    await page.setCookie(
-      { name: 'thda.u', value: 'e8c4d6b6-138f-6816-413f-7b6d787a6631', domain: '.homedepot.com' },
-      { name: 'DELIVERY_ZIP', value: zipcode || '73160', domain: '.homedepot.com' },
-      { name: 'THD_LOCALIZER', value: encodeURIComponent(JSON.stringify({
-        WORKFLOW: 'LOCALIZED_BY_STORE',
-        THD_FORCE_LOC: '0',
-        THD_LOCSTORE: storeId ? `${storeId}+` : '3917+Moore - Moore, OK+',
-        THD_STRFINDERZIP: zipcode || '73160',
-      })), domain: '.homedepot.com' },
-    );
-
-    console.log('Browser launched, navigating to Home Depot...');
-    await page.goto('https://www.homedepot.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    console.log('On homedepot.com, starting pagination...');
+    console.log('Store ID:', storeId);
 
     while (true) {
       console.log('Fetching index ' + startIndex);
@@ -111,52 +160,24 @@ const puppeteer = require('puppeteer');
       const variables = {
         storeId: storeId || null,
         keyword: 'clearance',
-        startIndex: startIndex,
+        startIndex,
         pageSize: PAGE_SIZE,
       };
 
       let json;
       try {
-        const response = await page.evaluate(async (url, query, variables) => {
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': '*/*',
-              'Origin': 'https://www.homedepot.com',
-              'Referer': 'https://www.homedepot.com/',
-              'X-Experience-Name': 'fusion-hdh-pip-mobile',
-              'X-Api-Cookies': '{"x-user-id":"e8c4d6b6-138f-6816-413f-7b6d787a6631"}',
-              'X-Debug': 'false',
-              'X-Hd-Dc': 'origin',
-            },
-            body: JSON.stringify({ query, variables }),
-          });
-          return res.json();
-        }, GRAPHQL_URL, query, variables);
-
-        json = response;
+        json = await makeRequest(variables);
       } catch (err) {
-        console.log('Fetch error:', err.message);
+        console.log('Request error:', err.message);
         break;
       }
 
       console.log('Response preview:', JSON.stringify(json).slice(0, 300));
 
-      const products =
-        json.data &&
-        json.data.searchModel &&
-        json.data.searchModel.products
-          ? json.data.searchModel.products
-          : [];
+      const products = json?.data?.searchModel?.products ?? [];
 
       if (totalProducts === null) {
-        totalProducts =
-          json.data &&
-          json.data.searchModel &&
-          json.data.searchModel.searchReport
-            ? json.data.searchModel.searchReport.totalProducts
-            : 0;
+        totalProducts = json?.data?.searchModel?.searchReport?.totalProducts ?? 0;
         console.log('Total products:', totalProducts);
       }
 
@@ -168,47 +189,36 @@ const puppeteer = require('puppeteer');
       for (const item of products) {
         if (allItems.length >= maxResults) break;
 
-        const clearancePrice = item.pricing && item.pricing.clearance ? item.pricing.clearance.value : null;
-        const regularPrice = item.pricing ? item.pricing.value : 0;
-        const originalPrice = item.pricing ? item.pricing.original : regularPrice;
+        const clearancePrice = item.pricing?.clearance?.value ?? null;
+        const regularPrice = item.pricing?.value ?? 0;
+        const originalPrice = item.pricing?.original ?? regularPrice;
         const price = clearancePrice !== null ? clearancePrice : regularPrice;
-
-        const dollarOff =
-          item.pricing && item.pricing.clearance && item.pricing.clearance.dollarOff != null
-            ? item.pricing.clearance.dollarOff
-            : (originalPrice > 0 && price > 0 ? Math.round((originalPrice - price) * 100) / 100 : 0);
-
-        const pct =
-          item.pricing && item.pricing.clearance
-            ? item.pricing.clearance.percentageOff
-            : originalPrice > 0 && price > 0
-              ? Math.round(((originalPrice - price) / originalPrice) * 100)
-              : 0;
-
+        const dollarOff = item.pricing?.clearance?.dollarOff ?? Math.round((originalPrice - price) * 100) / 100;
+        const pct = item.pricing?.clearance?.percentageOff ?? (originalPrice > 0 && price > 0 ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0);
         const isPenny = price > 0 && price <= 0.03;
 
         if (price > maxPrice) continue;
         if (pct < minDiscount) continue;
 
         allItems.push({
-          name: item.identifiers ? item.identifiers.productLabel : 'Unknown',
-          brand: item.identifiers ? item.identifiers.brandName : '',
-          price: price,
+          name: item.identifiers?.productLabel ?? 'Unknown',
+          brand: item.identifiers?.brandName ?? '',
+          price,
           retail: originalPrice,
-          pct: pct,
-          dollarOff: dollarOff,
-          isPenny: isPenny,
+          pct,
+          dollarOff,
+          isPenny,
           isClearanceItem: clearancePrice !== null,
           stock: 0,
-          inStock: item.availabilityType ? item.availabilityType.status : false,
-          aisle: item.location ? item.location.aisle : null,
-          bay: item.location ? item.location.bay : null,
-          sku: item.identifiers ? item.identifiers.storeSkuNumber : '',
-          upc: item.identifiers ? item.identifiers.upc : '',
-          itemId: item.itemId || '',
-          image: item.media && item.media.images && item.media.images[0] ? item.media.images[0].url : '',
-          url: 'https://www.homedepot.com' + (item.identifiers && item.identifiers.canonicalUrl ? item.identifiers.canonicalUrl : ''),
-          store: storeId ? 'Store #' + storeId : 'Near ' + zipcode,
+          inStock: item.availabilityType?.status ?? false,
+          aisle: item.location?.aisle ?? null,
+          bay: item.location?.bay ?? null,
+          sku: item.identifiers?.storeSkuNumber ?? '',
+          upc: item.identifiers?.upc ?? '',
+          itemId: item.itemId ?? '',
+          image: item.media?.images?.[0]?.url ?? '',
+          url: 'https://www.homedepot.com' + (item.identifiers?.canonicalUrl ?? ''),
+          store: 'Store #' + storeId,
           scrapedAt: new Date().toISOString(),
         });
       }
@@ -219,10 +229,9 @@ const puppeteer = require('puppeteer');
       if (totalProducts && startIndex + PAGE_SIZE >= totalProducts) break;
 
       startIndex += PAGE_SIZE;
-      await new Promise(function(r) { setTimeout(r, 1000); });
+      await new Promise(r => setTimeout(r, 800));
     }
 
-    await browser.close();
     console.log('Done! Total: ' + allItems.length);
     await Actor.pushData(allItems);
     await Actor.exit();
