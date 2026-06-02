@@ -1,7 +1,14 @@
 const { Actor } = require('apify');
+const { ProxyConfiguration } = require('apify');
 
 (async () => {
   await Actor.init();
+
+  // Use residential proxy to bypass Akamai/Forter bot detection
+  const proxyConfiguration = await Actor.createProxyConfiguration({
+    groups: ['RESIDENTIAL'],
+    countryCode: 'US',
+  });
 
   const input = await Actor.getInput() || {};
   const storeId = input.storeId || '';
@@ -111,10 +118,13 @@ const { Actor } = require('apify');
 
     let response;
     try {
+      const proxyUrl = await proxyConfiguration.newUrl();
+      const HttpsProxyAgent = require('https-proxy-agent');
       response = await fetch(GRAPHQL_URL, {
         method: 'POST',
         headers: HEADERS,
         body: JSON.stringify({ query, variables }),
+        agent: new HttpsProxyAgent(proxyUrl),
       });
     } catch (err) {
       console.log('Fetch error:', err.message);
