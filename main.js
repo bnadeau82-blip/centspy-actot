@@ -1,16 +1,26 @@
 const { Actor } = require('apify');
 
 (async () => {
-  await Actor.init();
+  try {
+    await Actor.init();
+    console.log('Actor initialized');
 
-  // Dynamic import required because got-scraping is ESM-only
-  const { gotScraping } = await import('got-scraping');
+    // Dynamic import required because got-scraping is ESM-only
+    const { gotScraping } = await import('got-scraping');
+    console.log('got-scraping loaded');
 
-  // Use residential proxy to bypass Akamai/Forter bot detection
-  const proxyConfiguration = await Actor.createProxyConfiguration({
-    groups: ['RESIDENTIAL'],
-    countryCode: 'US',
-  });
+    // Use residential proxy to bypass Akamai bot detection
+    let proxyConfiguration;
+    try {
+      proxyConfiguration = await Actor.createProxyConfiguration({
+        groups: ['RESIDENTIAL'],
+        countryCode: 'US',
+      });
+      console.log('Proxy configured: RESIDENTIAL');
+    } catch (proxyErr) {
+      console.log('Proxy setup failed, running without proxy:', proxyErr.message);
+      proxyConfiguration = null;
+    }
 
   const input = await Actor.getInput() || {};
   const storeId = input.storeId || '';
@@ -120,15 +130,16 @@ const { Actor } = require('apify');
 
     let response;
     try {
-      const proxyUrl = await proxyConfiguration.newUrl();
-      const result = await gotScraping({
+      const proxyUrl = proxyConfiguration ? await proxyConfiguration.newUrl() : null;
+      const requestOptions = {
         url: GRAPHQL_URL,
         method: 'POST',
         headers: HEADERS,
         body: JSON.stringify({ query, variables }),
-        proxyUrl,
         responseType: 'json',
-      });
+      };
+      if (proxyUrl) requestOptions.proxyUrl = proxyUrl;
+      const result = await gotScraping(requestOptions);
       response = result.body;
     } catch (err) {
       console.log('Fetch error:', err.message);
@@ -221,5 +232,11 @@ const { Actor } = require('apify');
   console.log('Done! Total: ' + allItems.length);
   await Actor.pushData(allItems);
   await Actor.exit();
+
+  } catch (err) {
+    console.error('FATAL ERROR:', err.message);
+    console.error(err.stack);
+    await Actor.exit({ exitCode: 1 });
+  }
 
 })();
