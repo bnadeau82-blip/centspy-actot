@@ -1,8 +1,10 @@
 const { Actor } = require('apify');
-const { gotScraping } = require('got-scraping');
 
 (async () => {
   await Actor.init();
+
+  // Dynamic import required because got-scraping is ESM-only
+  const { gotScraping } = await import('got-scraping');
 
   // Use residential proxy to bypass Akamai/Forter bot detection
   const proxyConfiguration = await Actor.createProxyConfiguration({
