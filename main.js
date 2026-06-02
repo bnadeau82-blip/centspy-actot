@@ -70,10 +70,7 @@ const puppeteer = require('puppeteer');
     console.log('Starting CentSpy HD Clearance Scraper...');
     console.log('Store ID:', storeId || ('ZIP: ' + zipcode));
 
-    // Launch Puppeteer with residential proxy
-    const proxyUrl = await proxyConfiguration.newUrl();
-    const proxyUrlObj = new URL(proxyUrl);
-    console.log('Launching browser with proxy...');
+    console.log('Launching browser...');
 
     const browser = await puppeteer.launch({
       headless: true,
@@ -81,17 +78,10 @@ const puppeteer = require('puppeteer');
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        `--proxy-server=${proxyUrlObj.hostname}:${proxyUrlObj.port}`,
       ],
     });
 
     const page = await browser.newPage();
-
-    // Authenticate with proxy
-    await page.authenticate({
-      username: proxyUrlObj.username,
-      password: decodeURIComponent(proxyUrlObj.password),
-    });
 
     // Set cookies from a real HD session
     await page.setCookie(
