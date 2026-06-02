@@ -1,13 +1,12 @@
 {
   "name": "centspy-hd-clearance",
   "version": "1.0.0",
-  "description": "CentSpy Home Depot Clearance Scraper",
+  "description": "CentSpy Home Depot Clearance & Penny Item Scraper",
   "main": "main.js",
   "scripts": {
     "build": "echo ok"
   },
   "dependencies": {
-    "apify": "^3.0.0",
-    "puppeteer": "^21.0.0"
+    "apify": "^3.0.0"
   }
 }
