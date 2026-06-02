@@ -72,6 +72,7 @@ const puppeteer = require('puppeteer');
 
     // Launch Puppeteer with residential proxy
     const proxyUrl = await proxyConfiguration.newUrl();
+    const proxyUrlObj = new URL(proxyUrl);
     console.log('Launching browser with proxy...');
 
     const browser = await puppeteer.launch({
@@ -79,11 +80,18 @@ const puppeteer = require('puppeteer');
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        `--proxy-server=${proxyUrl}`,
+        '--disable-dev-shm-usage',
+        `--proxy-server=${proxyUrlObj.hostname}:${proxyUrlObj.port}`,
       ],
     });
 
     const page = await browser.newPage();
+
+    // Authenticate with proxy
+    await page.authenticate({
+      username: proxyUrlObj.username,
+      password: decodeURIComponent(proxyUrlObj.password),
+    });
 
     // Set cookies from a real HD session
     await page.setCookie(
