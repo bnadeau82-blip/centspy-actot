@@ -97,7 +97,9 @@ const puppeteer = require('puppeteer');
       })), domain: '.homedepot.com' },
     );
 
-    console.log('Browser launched, starting pagination...');
+    console.log('Browser launched, navigating to Home Depot...');
+    await page.goto('https://www.homedepot.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    console.log('On homedepot.com, starting pagination...');
 
     while (true) {
       console.log('Fetching index ' + startIndex);
