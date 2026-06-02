@@ -4,7 +4,6 @@
   "description": "CentSpy Home Depot Clearance Scraper",
   "main": "main.js",
   "scripts": {
-    "start": "node main.js",
     "build": "echo ok"
   },
   "dependencies": {
