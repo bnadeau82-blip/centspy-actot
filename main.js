@@ -1,5 +1,5 @@
 const { Actor } = require('apify');
-const { ProxyConfiguration } = require('apify');
+const { gotScraping } = require('got-scraping');
 
 (async () => {
   await Actor.init();
@@ -119,24 +119,21 @@ const { ProxyConfiguration } = require('apify');
     let response;
     try {
       const proxyUrl = await proxyConfiguration.newUrl();
-      const HttpsProxyAgent = require('https-proxy-agent');
-      response = await fetch(GRAPHQL_URL, {
+      const result = await gotScraping({
+        url: GRAPHQL_URL,
         method: 'POST',
         headers: HEADERS,
         body: JSON.stringify({ query, variables }),
-        agent: new HttpsProxyAgent(proxyUrl),
+        proxyUrl,
+        responseType: 'json',
       });
+      response = result.body;
     } catch (err) {
       console.log('Fetch error:', err.message);
       break;
     }
 
-    if (!response.ok) {
-      console.log('Bad response:', response.status);
-      break;
-    }
-
-    const json = await response.json();
+    const json = response;
     console.log('Response preview:', JSON.stringify(json).slice(0, 300));
 
     const products =
