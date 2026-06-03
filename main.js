@@ -1,6 +1,4 @@
 const { Actor } = require('apify');
-const tls = require('tls');
-const https = require('https');
 
 (async () => {
   try {
@@ -15,32 +13,11 @@ const https = require('https');
 
     const input = await Actor.getInput() || {};
     const storeId = input.storeId || '3917';
-    const zipcode = input.zipcode || '';
     const maxResults = input.maxResults || 500;
     const minDiscount = input.minDiscount || 0;
     const maxPrice = input.maxPrice || 999999;
 
     const GRAPHQL_URL = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=searchModel';
-
-    const HEADERS = {
-      'Content-Type': 'application/json',
-      'Accept': '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Origin': 'https://www.homedepot.com',
-      'Referer': 'https://www.homedepot.com/',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'X-Experience-Name': 'general-merchandise',
-      'X-Api-Cookies': JSON.stringify({ 'x-user-id': 'guest' }),
-      'X-Debug': 'false',
-      'X-Hd-Dc': 'origin',
-      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-      'sec-fetch-dest': 'empty',
-      'sec-fetch-mode': 'cors',
-      'sec-fetch-site': 'same-site',
-    };
 
     const query = `
     query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $keyword: String) {
@@ -83,67 +60,39 @@ const https = require('https');
       }
     }`;
 
-    // Make a request through the proxy using Node's built-in https
     async function makeRequest(variables) {
       const proxyUrl = await proxyConfiguration.newUrl();
-      const proxyParsed = new URL(proxyUrl);
       
-      return new Promise((resolve, reject) => {
-        const body = JSON.stringify({ query, variables });
-        const urlParsed = new URL(GRAPHQL_URL);
-        
-        // Connect through proxy using CONNECT tunnel
-        const proxyReq = https.request({
-          host: proxyParsed.hostname,
-          port: proxyParsed.port,
-          method: 'CONNECT',
-          path: `${urlParsed.hostname}:443`,
-          headers: {
-            'Proxy-Authorization': 'Basic ' + Buffer.from(`${proxyParsed.username}:${decodeURIComponent(proxyParsed.password)}`).toString('base64'),
-          },
-        });
-
-        proxyReq.on('connect', (res, socket) => {
-          const tlsSocket = tls.connect({
-            socket,
-            servername: urlParsed.hostname,
-            rejectUnauthorized: false,
-          });
-
-          const req = https.request({
-            createConnection: () => tlsSocket,
-            hostname: urlParsed.hostname,
-            path: urlParsed.pathname + urlParsed.search,
-            method: 'POST',
-            headers: {
-              ...HEADERS,
-              'Content-Length': Buffer.byteLength(body),
-            },
-          });
-
-          req.on('response', (response) => {
-            let data = '';
-            const chunks = [];
-            response.on('data', chunk => chunks.push(chunk));
-            response.on('end', () => {
-              try {
-                const buf = Buffer.concat(chunks);
-                const json = JSON.parse(buf.toString());
-                resolve(json);
-              } catch(e) {
-                reject(new Error('Failed to parse response: ' + e.message));
-              }
-            });
-          });
-
-          req.on('error', reject);
-          req.write(body);
-          req.end();
-        });
-
-        proxyReq.on('error', reject);
-        proxyReq.end();
+      // Use node-fetch with proxy agent
+      const { HttpsProxyAgent } = require('https-proxy-agent');
+      const fetch = require('node-fetch');
+      
+      const agent = new HttpsProxyAgent(proxyUrl);
+      
+      const response = await fetch(GRAPHQL_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': '*/*',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Origin': 'https://www.homedepot.com',
+          'Referer': 'https://www.homedepot.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'X-Experience-Name': 'general-merchandise',
+          'X-Api-Cookies': '{"x-user-id":"guest"}',
+          'X-Debug': 'false',
+          'X-Hd-Dc': 'origin',
+          'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-fetch-dest': 'empty',
+          'sec-fetch-mode': 'cors',
+          'sec-fetch-site': 'same-site',
+        },
+        body: JSON.stringify({ query, variables }),
+        agent,
       });
+
+      return response.json();
     }
 
     const PAGE_SIZE = 24;
