@@ -17,53 +17,7 @@ const { PlaywrightCrawler } = require('crawlee');
       countryCode: 'US',
     });
 
-    const GRAPHQL_URL = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=searchModel';
-
-    const query = `
-    query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $keyword: String) {
-      searchModel(keyword: $keyword, storeId: $storeId) {
-        products(startIndex: $startIndex, pageSize: $pageSize) {
-          itemId
-          identifiers {
-            brandName
-            productLabel
-            storeSkuNumber
-            canonicalUrl
-            upc
-          }
-          pricing(storeId: $storeId) {
-            value
-            original
-            clearance {
-              value
-              dollarOff
-              percentageOff
-            }
-          }
-          availabilityType {
-            discontinued
-            status
-          }
-          location {
-            aisle
-            bay
-          }
-          media {
-            images {
-              url
-            }
-          }
-        }
-        searchReport {
-          totalProducts
-        }
-      }
-    }`;
-
     const allItems = [];
-    const PAGE_SIZE = 24;
-    let startIndex = 0;
-    let totalProducts = null;
     let done = false;
 
     console.log('Starting CentSpy HD Clearance Scraper (Playwright mode)...');
@@ -84,7 +38,6 @@ const { PlaywrightCrawler } = require('crawlee');
         log.info('Setting up network interception...');
 
         // Intercept GraphQL responses that the page makes naturally
-        // This way Akamai sees legitimate page-initiated requests
         page.on('response', async (response) => {
           const url = response.url();
           if (url.includes('federation-gateway/graphql') && !done) {
@@ -92,12 +45,9 @@ const { PlaywrightCrawler } = require('crawlee');
               const json = await response.json();
               const products = json?.data?.searchModel?.products ?? [];
 
-              if (totalProducts === null) {
-                totalProducts = json?.data?.searchModel?.searchReport?.totalProducts ?? 0;
-                log.info('Total products: ' + totalProducts);
+              if (products.length > 0) {
+                log.info('Intercepted ' + products.length + ' products from network');
               }
-
-              log.info('Intercepted ' + products.length + ' products from network');
 
               for (const item of products) {
                 if (allItems.length >= maxResults) break;
@@ -148,13 +98,17 @@ const { PlaywrightCrawler } = require('crawlee');
           }
         });
 
-        // Navigate to HD clearance search page — the page will fire GraphQL naturally
+        // Navigate to HD clearance search — page fires GraphQL naturally
         const searchUrl = `https://www.homedepot.com/s/clearance?NCNI-5&storeSelection=${storeId}`;
         log.info('Navigating to: ' + searchUrl);
         await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 60000 });
-        log.info('Page loaded. Items collected: ' + allItems.length);
 
-        // Scroll down to trigger pagination loads
+        // Save screenshot to Apify key-value store so we can see what the browser sees
+        const screenshot = await page.screenshot({ fullPage: false });
+        await Actor.setValue('screenshot', screenshot, { contentType: 'image/png' });
+        log.info('Screenshot saved! Items collected so far: ' + allItems.length);
+
+        // Scroll down to trigger pagination
         let lastCount = 0;
         let stallCount = 0;
 
