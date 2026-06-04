@@ -98,7 +98,8 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
         log.info('Landing on HD homepage to get fresh Akamai cookies...');
 
         // Wait for full page load so Akamai issues cookies
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('load');
+        await page.waitForTimeout(3000); // extra settle time for Akamai cookies
         log.info('Homepage loaded. URL: ' + page.url());
 
         // Set the store cookie so HD knows we want store 3917
