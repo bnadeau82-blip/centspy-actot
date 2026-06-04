@@ -20,8 +20,8 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
     const GRAPHQL_URL = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=searchModel';
 
     const query = `
-    query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $navParam: String) {
-      searchModel(navParam: $navParam, storeId: $storeId) {
+    query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $keyword: String) {
+      searchModel(keyword: $keyword, storeId: $storeId) {
         products(startIndex: $startIndex, pageSize: $pageSize) {
           itemId
           identifiers {
@@ -119,25 +119,25 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
 
           const variables = {
             storeId,
-            navParam: 'N-5yc1vZbmh4', // HD's clearance nav parameter
+            keyword: 'clearance',
             startIndex,
             pageSize: PAGE_SIZE,
           };
 
           let json;
           try {
-            // Fire GraphQL from INSIDE the browser with fresh Akamai cookies
-            json = await page.evaluate(async ({ url, query, variables }) => {
+            json = await page.evaluate(async ({ url, query, variables, storeId }) => {
               const res = await fetch(url, {
                 method: 'POST',
                 headers: {
                   'content-type': 'application/json',
                   'accept': '*/*',
                   'accept-language': 'en-US,en;q=0.9',
-                  'x-experience-name': 'general-merchandise',
-                  'x-api-cookies': JSON.stringify({ 'x-user-id': 'guest' }),
+                  'x-experience-name': 'browse-desktop',
+                  'x-api-cookies': `{"x-user-id":"guest"}`,
                   'x-debug': 'false',
                   'x-hd-dc': 'origin',
+                  'x-current-url': `/s/clearance?storeSelection=${storeId}`,
                   'origin': 'https://www.homedepot.com',
                   'referer': 'https://www.homedepot.com/',
                   'sec-fetch-site': 'same-site',
@@ -148,7 +148,7 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
               });
               const text = await res.text();
               return { status: res.status, body: text };
-            }, { url: GRAPHQL_URL, query, variables });
+            }, { url: GRAPHQL_URL, query, variables, storeId });
 
           } catch (err) {
             log.error('Fetch error: ' + err.message);
