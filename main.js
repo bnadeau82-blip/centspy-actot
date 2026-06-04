@@ -31,7 +31,7 @@ const { PlaywrightCrawler } = require('crawlee');
       },
       requestHandlerTimeoutSecs: 300,
       requestList: await require('crawlee').RequestList.open(null, [
-        'https://www.homedepot.com/'
+        `https://www.homedepot.com/b/Hardware-Fasteners-Nails/N-5yc1vZc2dx`
       ]),
 
       async requestHandler({ page, log }) {
@@ -92,25 +92,36 @@ const { PlaywrightCrawler } = require('crawlee');
               }
 
             } catch (e) {
-              log.error('Failed to parse intercepted response: ' + e.message);
+              // silently skip parse errors
             }
           }
         });
 
-        const searchUrl = `https://www.homedepot.com/b/clearance/N-5yc1vZbmh5?storeSelection=${storeId}`;
-        log.info('Navigating to: ' + searchUrl);
-        await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 60000 });
+        // Wait for the page to fully load and Akamai to issue cookies
+        await page.waitForLoadState('networkidle');
+        log.info('Page loaded. Current URL: ' + page.url());
 
+        // Save screenshot so we can see what the browser sees
         const screenshot = await page.screenshot({ fullPage: false });
         await Actor.setValue('screenshot', screenshot, { contentType: 'image/png' });
-        log.info('Screenshot saved! Items collected so far: ' + allItems.length);
+        log.info('Screenshot saved. Items so far: ' + allItems.length);
 
+        // Now navigate to clearance sorted by lowest price using store filter
+        const clearanceUrl = `https://www.homedepot.com/b/Special-Values-Clearance/N-5yc1vZbmh4?sortby=price&order=asc&storeSelection=${storeId}`;
+        log.info('Navigating to clearance URL: ' + clearanceUrl);
+        await page.goto(clearanceUrl, { waitUntil: 'networkidle', timeout: 60000 });
+
+        const screenshot2 = await page.screenshot({ fullPage: false });
+        await Actor.setValue('screenshot2', screenshot2, { contentType: 'image/png' });
+        log.info('Clearance page screenshot saved. Items so far: ' + allItems.length);
+
+        // Scroll to trigger pagination
         let lastCount = 0;
         let stallCount = 0;
 
-        while (!done && stallCount < 5) {
+        while (!done && stallCount < 8) {
           await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-          await page.waitForTimeout(2000 + Math.random() * 1000);
+          await page.waitForTimeout(2500 + Math.random() * 1000);
 
           if (allItems.length === lastCount) {
             stallCount++;
