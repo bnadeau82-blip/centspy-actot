@@ -37,7 +37,6 @@ const { PlaywrightCrawler } = require('crawlee');
       async requestHandler({ page, log }) {
         log.info('Setting up network interception...');
 
-        // Intercept GraphQL responses that the page makes naturally
         page.on('response', async (response) => {
           const url = response.url();
           if (url.includes('federation-gateway/graphql') && !done) {
@@ -98,17 +97,14 @@ const { PlaywrightCrawler } = require('crawlee');
           }
         });
 
-        // Navigate to HD clearance search — page fires GraphQL naturally
         const searchUrl = `https://www.homedepot.com/b/clearance/N-5yc1vZbmh5?storeSelection=${storeId}`;
         log.info('Navigating to: ' + searchUrl);
         await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 60000 });
 
-        // Save screenshot to Apify key-value store so we can see what the browser sees
         const screenshot = await page.screenshot({ fullPage: false });
         await Actor.setValue('screenshot', screenshot, { contentType: 'image/png' });
         log.info('Screenshot saved! Items collected so far: ' + allItems.length);
 
-        // Scroll down to trigger pagination
         let lastCount = 0;
         let stallCount = 0;
 
