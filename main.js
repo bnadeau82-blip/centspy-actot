@@ -20,8 +20,8 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
     const GRAPHQL_URL = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=searchModel';
 
     const query = `
-    query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $keyword: String) {
-      searchModel(keyword: $keyword, storeId: $storeId) {
+    query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $keyword: String, $sortby: String, $orderby: String) {
+      searchModel(keyword: $keyword, storeId: $storeId, sortby: $sortby, orderby: $orderby) {
         products(startIndex: $startIndex, pageSize: $pageSize) {
           itemId
           identifiers {
@@ -122,6 +122,8 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
             keyword: 'clearance',
             startIndex,
             pageSize: PAGE_SIZE,
+            sortby: 'price',
+            orderby: 'asc',
           };
 
           let json;
@@ -133,11 +135,11 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
                   'content-type': 'application/json',
                   'accept': '*/*',
                   'accept-language': 'en-US,en;q=0.9',
-                  'x-experience-name': 'browse-desktop',
+                  'x-experience-name': 'general-merchandise',
                   'x-api-cookies': `{"x-user-id":"guest"}`,
                   'x-debug': 'false',
                   'x-hd-dc': 'origin',
-                  'x-current-url': `/s/clearance?storeSelection=${storeId}`,
+                  'x-current-url': `/s/clearance`,
                   'origin': 'https://www.homedepot.com',
                   'referer': 'https://www.homedepot.com/',
                   'sec-fetch-site': 'same-site',
