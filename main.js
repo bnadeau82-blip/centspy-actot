@@ -60,10 +60,6 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
               }
             }
           }
-          location {
-            aisle
-            bay
-          }
           media {
             images {
               url
@@ -226,8 +222,8 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
               isClearanceItem: clearancePrice !== null,
               stock,
               inStock: stock > 0,
-              aisle: item.location?.aisle ?? null,
-              bay: item.location?.bay ?? null,
+              aisle: null,
+              bay: null,
               sku: item.identifiers?.storeSkuNumber ?? '',
               upc: item.identifiers?.upc ?? '',
               itemId: item.itemId ?? '',
