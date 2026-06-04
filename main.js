@@ -83,8 +83,11 @@ const { PlaywrightCrawler } = require('crawlee');
       async requestHandler({ page, log }) {
         log.info('Browser landed on HD homepage, warming up session...');
 
-        // Wait for full page load so Akamai sees normal browser behavior
-        await page.waitForTimeout(3000);
+        // Wait for Akamai to finish any challenges/redirects and page to fully settle
+        await page.waitForLoadState('networkidle');
+        log.info('Network idle, waiting additional settle time...');
+        await page.waitForTimeout(5000);
+        log.info('Current URL: ' + page.url());
 
         while (!done) {
           log.info('Fetching index ' + startIndex);
