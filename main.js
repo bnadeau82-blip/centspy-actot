@@ -99,7 +99,7 @@ const { PlaywrightCrawler } = require('crawlee');
         });
 
         // Navigate to HD clearance search — page fires GraphQL naturally
-        const searchUrl = `https://www.homedepot.com/s/clearance?NCNI-5&storeSelection=${storeId}`;
+        const searchUrl = `https://www.homedepot.com/b/clearance/N-5yc1vZbmh5?storeSelection=${storeId}`;
         log.info('Navigating to: ' + searchUrl);
         await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 60000 });
 
