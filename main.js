@@ -81,116 +81,99 @@ const { PlaywrightCrawler } = require('crawlee');
       ]),
 
       async requestHandler({ page, log }) {
-        log.info('Browser landed on HD homepage, warming up session...');
+        log.info('Setting up network interception...');
 
-        // Wait for Akamai to finish any challenges/redirects and page to fully settle
-        await page.waitForLoadState('networkidle');
-        log.info('Network idle, waiting additional settle time...');
-        await page.waitForTimeout(5000);
-        log.info('Current URL: ' + page.url());
+        // Intercept GraphQL responses that the page makes naturally
+        // This way Akamai sees legitimate page-initiated requests
+        page.on('response', async (response) => {
+          const url = response.url();
+          if (url.includes('federation-gateway/graphql') && !done) {
+            try {
+              const json = await response.json();
+              const products = json?.data?.searchModel?.products ?? [];
 
-        while (!done) {
-          log.info('Fetching index ' + startIndex);
+              if (totalProducts === null) {
+                totalProducts = json?.data?.searchModel?.searchReport?.totalProducts ?? 0;
+                log.info('Total products: ' + totalProducts);
+              }
 
-          const variables = {
-            storeId,
-            keyword: 'clearance',
-            startIndex,
-            pageSize: PAGE_SIZE,
-          };
+              log.info('Intercepted ' + products.length + ' products from network');
 
-          let json;
-          try {
-            // Execute GraphQL call FROM INSIDE the browser page
-            // This carries real browser TLS fingerprint, cookies, and headers
-            json = await page.evaluate(async ({ url, query, variables }) => {
-              const res = await fetch(url, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept': '*/*',
-                  'Accept-Language': 'en-US,en;q=0.9',
-                  'Origin': 'https://www.homedepot.com',
-                  'Referer': 'https://www.homedepot.com/',
-                  'X-Experience-Name': 'general-merchandise',
-                  'X-Api-Cookies': '{"x-user-id":"guest"}',
-                  'X-Debug': 'false',
-                  'X-Hd-Dc': 'origin',
-                },
-                body: JSON.stringify({ query, variables }),
-              });
-              return res.json();
-            }, { url: GRAPHQL_URL, query, variables });
+              for (const item of products) {
+                if (allItems.length >= maxResults) break;
 
-          } catch (err) {
-            log.error('Request error: ' + err.message);
-            done = true;
-            break;
+                const clearancePrice = item.pricing?.clearance?.value ?? null;
+                const regularPrice = item.pricing?.value ?? 0;
+                const originalPrice = item.pricing?.original ?? regularPrice;
+                const price = clearancePrice !== null ? clearancePrice : regularPrice;
+                const dollarOff = item.pricing?.clearance?.dollarOff ?? Math.round((originalPrice - price) * 100) / 100;
+                const pct = item.pricing?.clearance?.percentageOff ?? (originalPrice > 0 && price > 0 ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0);
+                const isPenny = price > 0 && price <= 0.03;
+
+                if (price > maxPrice) return;
+                if (pct < minDiscount) return;
+
+                allItems.push({
+                  name: item.identifiers?.productLabel ?? 'Unknown',
+                  brand: item.identifiers?.brandName ?? '',
+                  price,
+                  retail: originalPrice,
+                  pct,
+                  dollarOff,
+                  isPenny,
+                  isClearanceItem: clearancePrice !== null,
+                  stock: 0,
+                  inStock: item.availabilityType?.status ?? false,
+                  aisle: item.location?.aisle ?? null,
+                  bay: item.location?.bay ?? null,
+                  sku: item.identifiers?.storeSkuNumber ?? '',
+                  upc: item.identifiers?.upc ?? '',
+                  itemId: item.itemId ?? '',
+                  image: item.media?.images?.[0]?.url ?? '',
+                  url: 'https://www.homedepot.com' + (item.identifiers?.canonicalUrl ?? ''),
+                  store: 'Store #' + storeId,
+                  scrapedAt: new Date().toISOString(),
+                });
+              }
+
+              log.info('Collected ' + allItems.length + ' items so far');
+
+              if (allItems.length >= maxResults) {
+                done = true;
+              }
+
+            } catch (e) {
+              log.error('Failed to parse intercepted response: ' + e.message);
+            }
           }
+        });
 
-          const preview = JSON.stringify(json).slice(0, 300);
-          log.info('Response preview: ' + preview);
+        // Navigate to HD clearance search page — the page will fire GraphQL naturally
+        const searchUrl = `https://www.homedepot.com/s/clearance?NCNI-5&storeSelection=${storeId}`;
+        log.info('Navigating to: ' + searchUrl);
+        await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 60000 });
+        log.info('Page loaded. Items collected: ' + allItems.length);
 
-          const products = json?.data?.searchModel?.products ?? [];
+        // Scroll down to trigger pagination loads
+        let lastCount = 0;
+        let stallCount = 0;
 
-          if (totalProducts === null) {
-            totalProducts = json?.data?.searchModel?.searchReport?.totalProducts ?? 0;
-            log.info('Total products: ' + totalProducts);
+        while (!done && stallCount < 5) {
+          await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+          await page.waitForTimeout(2000 + Math.random() * 1000);
+
+          if (allItems.length === lastCount) {
+            stallCount++;
+            log.info('No new items, stall count: ' + stallCount);
+          } else {
+            stallCount = 0;
+            lastCount = allItems.length;
+            log.info('Scrolled, total items: ' + allItems.length);
           }
-
-          if (products.length === 0) {
-            log.info('No more products');
-            done = true;
-            break;
-          }
-
-          for (const item of products) {
-            if (allItems.length >= maxResults) break;
-
-            const clearancePrice = item.pricing?.clearance?.value ?? null;
-            const regularPrice = item.pricing?.value ?? 0;
-            const originalPrice = item.pricing?.original ?? regularPrice;
-            const price = clearancePrice !== null ? clearancePrice : regularPrice;
-            const dollarOff = item.pricing?.clearance?.dollarOff ?? Math.round((originalPrice - price) * 100) / 100;
-            const pct = item.pricing?.clearance?.percentageOff ?? (originalPrice > 0 && price > 0 ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0);
-            const isPenny = price > 0 && price <= 0.03;
-
-            if (price > maxPrice) continue;
-            if (pct < minDiscount) continue;
-
-            allItems.push({
-              name: item.identifiers?.productLabel ?? 'Unknown',
-              brand: item.identifiers?.brandName ?? '',
-              price,
-              retail: originalPrice,
-              pct,
-              dollarOff,
-              isPenny,
-              isClearanceItem: clearancePrice !== null,
-              stock: 0,
-              inStock: item.availabilityType?.status ?? false,
-              aisle: item.location?.aisle ?? null,
-              bay: item.location?.bay ?? null,
-              sku: item.identifiers?.storeSkuNumber ?? '',
-              upc: item.identifiers?.upc ?? '',
-              itemId: item.itemId ?? '',
-              image: item.media?.images?.[0]?.url ?? '',
-              url: 'https://www.homedepot.com' + (item.identifiers?.canonicalUrl ?? ''),
-              store: 'Store #' + storeId,
-              scrapedAt: new Date().toISOString(),
-            });
-          }
-
-          log.info('Collected ' + allItems.length + ' items');
-
-          if (allItems.length >= maxResults) { done = true; break; }
-          if (totalProducts && startIndex + PAGE_SIZE >= totalProducts) { done = true; break; }
-
-          startIndex += PAGE_SIZE;
-
-          // Human-like delay between requests
-          await page.waitForTimeout(1000 + Math.random() * 500);
         }
+
+        done = true;
+        log.info('Scroll complete. Final count: ' + allItems.length);
       },
     });
 
