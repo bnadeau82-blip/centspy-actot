@@ -20,8 +20,8 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
     const GRAPHQL_URL = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=searchModel';
 
     const query = `
-    query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $keyword: String) {
-      searchModel(keyword: $keyword, storeId: $storeId) {
+    query searchModel($storeId: String, $startIndex: Int, $pageSize: Int, $navParam: String) {
+      searchModel(navParam: $navParam, storeId: $storeId) {
         products(startIndex: $startIndex, pageSize: $pageSize) {
           itemId
           identifiers {
@@ -119,7 +119,7 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
 
           const variables = {
             storeId,
-            keyword: 'clearance',
+            navParam: 'N-5yc1vZbmh4', // HD's clearance nav parameter
             startIndex,
             pageSize: PAGE_SIZE,
           };
