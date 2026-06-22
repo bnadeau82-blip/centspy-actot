@@ -124,22 +124,23 @@ Actor.main(async () => {
       console.log(`[DEPT] → ${dept.name}`);
 
       try {
-        // Session is established from homepage — direct goto works now.
-        await Promise.all([
-          page
-            .waitForResponse(
-              (r) =>
-                (r.url().includes('apionline.homedepot.com') ||
-                 r.url().includes('homedepot.com/federation-gateway/graphql')) &&
-                r.status() === 200,
-              { timeout: 25_000 }
-            )
-            .catch(() => null),
-          page.goto(`https://www.homedepot.com${dept.path}`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 30_000,
-          }),
-        ]);
+        // Fire navigation without blocking on full page load —
+        // Akamai may stall DOMContentLoaded but API calls can still fire.
+        page.goto(`https://www.homedepot.com${dept.path}`, {
+          waitUntil: 'commit',
+          timeout: 15_000,
+        }).catch(() => null);
+
+        // What we actually care about: the GraphQL product response.
+        await page
+          .waitForResponse(
+            (r) =>
+              (r.url().includes('apionline.homedepot.com') ||
+               r.url().includes('homedepot.com/federation-gateway/graphql')) &&
+              r.status() === 200,
+            { timeout: 25_000 }
+          )
+          .catch(() => null);
 
         // Scroll to trigger intersection-observer lazy loads on the product grid.
         await page.evaluate(() => {
