@@ -1,10 +1,17 @@
 {
-  "name": "centspy-my-actor",
-  "version": "1.0.0",
+  "name": "centspy-actor",
+  "version": "0.0.1",
   "type": "commonjs",
+  "description": "CentSpy HD Clearance Scraper",
+  "main": "main.js",
+  "scripts": {
+    "start": "node main.js"
+  },
   "dependencies": {
     "apify": "^3.0.0",
     "crawlee": "^3.0.0",
-    "playwright": "^1.40.0"
+    "playwright": "^1.40.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   }
 }

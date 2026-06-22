@@ -1,5 +1,11 @@
 const { Actor } = require('apify');
 const { PlaywrightCrawler, RequestList } = require('crawlee');
+const { chromium } = require('playwright-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+
+// Patch chromium with stealth — defeats Akamai's headless Chrome detection
+// Fixes: navigator.webdriver, CDP signatures, WebGL/canvas fingerprint, plugin arrays
+chromium.use(StealthPlugin());
 
 (async () => {
   try {
@@ -51,9 +57,15 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
 
     const crawler = new PlaywrightCrawler({
       proxyConfiguration,
-      headless: true,
-      browserPoolOptions: { useFingerprints: true },
       requestHandlerTimeoutSecs: 900,
+      // Use playwright-extra stealth launcher instead of default Chromium
+      // This patches the signals Akamai uses to detect headless browsers
+      launchContext: {
+        launcher: chromium,
+        launchOptions: {
+          headless: true,
+        },
+      },
       // Single entry point: homepage. We navigate to each department inside the handler.
       requestList: await RequestList.open(null, ['https://www.homedepot.com/']),
 
