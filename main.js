@@ -28,7 +28,7 @@ const DEPARTMENTS = [
 Actor.main(async () => {
   const input = (await Actor.getInput()) ?? {};
   const {
-    akamaiCookies  = [],   // paste fresh cookies from Reqable here
+    akamaiCookies  = [],
     storeId        = '3917',
     supabaseUrl,
     supabaseKey,
@@ -38,16 +38,10 @@ Actor.main(async () => {
   const supabase =
     supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
-  // Residential proxy — sticky session per store keeps Akamai happy
-  const proxy = await Actor.createProxyConfiguration({
-    useApifyProxy: true,
-    apifyProxyGroups: ['RESIDENTIAL'],
-  });
-  const proxyUrl = await proxy.newUrl(`STORE_${storeId}`);
-
+  // No proxy — removed to rule out 407 proxy auth errors.
+  // Re-enable once datacenter or residential proxy confirmed available.
   const browser = await chromium.launch({
     headless: true,
-    proxy: { server: proxyUrl },
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
@@ -60,8 +54,7 @@ Actor.main(async () => {
     timezoneId: 'America/Chicago',
   });
 
-  // Inject Akamai cookies into the context BEFORE opening any page.
-  // This gives sensor_data the existing cookie state to validate against.
+  // Inject cookies BEFORE opening any page.
   if (akamaiCookies.length > 0) {
     await context.addCookies(
       akamaiCookies.map((c) => ({
@@ -74,22 +67,24 @@ Actor.main(async () => {
         sameSite: c.sameSite ?? 'Lax',
       }))
     );
-    console.log(`[COOKIES] Injected ${akamaiCookies.length} Akamai cookies`);
+    console.log(`[COOKIES] Injected ${akamaiCookies.length} cookies`);
   } else {
-    console.log('[COOKIES] None provided — running without cookie injection');
+    console.log('[COOKIES] None provided');
   }
 
   const page      = await context.newPage();
   const collected = [];
 
   // ── Response interceptor ─────────────────────────────────────────────────
-  // Must be registered BEFORE any goto so we don't miss early calls.
   page.on('response', async (res) => {
     try {
-      if (res.url().includes('homedepot.com')) console.log(`[RES] ${res.status()} ${res.url().split('?')[0]}`);
-      
-      // HD fires GraphQL from both apionline.homedepot.com AND www.homedepot.com/federation-gateway
       const url = res.url();
+
+      // Debug: log all HD responses so we can see status codes
+      if (url.includes('homedepot.com')) {
+        console.log(`[RES] ${res.status()} ${url.split('?')[0]}`);
+      }
+
       const isGraphQL =
         url.includes('apionline.homedepot.com') ||
         url.includes('homedepot.com/federation-gateway/graphql');
@@ -110,7 +105,7 @@ Actor.main(async () => {
   });
 
   try {
-    // ── 1. Load homepage so SPA boots and Akamai JS initialises ──────────
+    // ── 1. Load homepage ─────────────────────────────────────────────────
     console.log('[NAV] Loading homepage...');
     await page.goto('https://www.homedepot.com', {
       waitUntil: 'networkidle',
@@ -118,7 +113,7 @@ Actor.main(async () => {
     });
     console.log('[NAV] Homepage ready');
 
-    // ── 2. Navigate each department via SPA routing ───────────────────────
+    // ── 2. Navigate each department ───────────────────────────────────────
     const depts = DEPARTMENTS.slice(0, maxDepartments);
 
     for (const dept of depts) {
@@ -126,14 +121,13 @@ Actor.main(async () => {
       console.log(`[DEPT] → ${dept.name}`);
 
       try {
-        // Fire navigation without blocking on full page load —
-        // Akamai may stall DOMContentLoaded but API calls can still fire.
+        // Fire navigation without blocking — Akamai may stall DOMContentLoaded
+        // but GraphQL calls can still fire during the load.
         page.goto(`https://www.homedepot.com${dept.path}`, {
           waitUntil: 'commit',
-          timeout: 15_000,
+          timeout:   15_000,
         }).catch(() => null);
 
-        // What we actually care about: the GraphQL product response.
         await page
           .waitForResponse(
             (r) =>
@@ -144,7 +138,7 @@ Actor.main(async () => {
           )
           .catch(() => null);
 
-        // Scroll to trigger intersection-observer lazy loads on the product grid.
+        // Scroll to trigger lazy-loaded product grid
         await page.evaluate(() => {
           const h = document.documentElement?.scrollHeight || document.body?.scrollHeight || 0;
           window.scrollTo(0, h / 2);
@@ -156,9 +150,7 @@ Actor.main(async () => {
         });
         await page.waitForTimeout(2_500);
 
-        console.log(
-          `[DEPT] ${dept.name}: +${collected.length - before} items (total ${collected.length})`
-        );
+        console.log(`[DEPT] ${dept.name}: +${collected.length - before} (total ${collected.length})`);
       } catch (e) {
         console.log(`[ERR] ${dept.name}: ${e.message}`);
       }
@@ -192,9 +184,7 @@ function parseProduct(p, storeId) {
 
     if (!itemId || price === null) return null;
 
-    const isPenny =
-      price <= 0.01;
-
+    const isPenny     = price <= 0.01;
     const isClearance =
       String(pricing.promotionTag ?? '').toLowerCase().includes('clearance') ||
       (wasPrice !== null && wasPrice > 0 && price < wasPrice * 0.6);
@@ -229,9 +219,7 @@ async function upsertToSupabase(supabase, items) {
     if (error) {
       console.log(`[SUPABASE ERR] ${error.message}`);
     } else {
-      console.log(
-        `[SUPABASE] Upserted rows ${i + 1}–${Math.min(i + BATCH, items.length)}`
-      );
+      console.log(`[SUPABASE] Upserted rows ${i + 1}–${Math.min(i + BATCH, items.length)}`);
     }
   }
 }
