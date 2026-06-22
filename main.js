@@ -28,11 +28,14 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
       browserPoolOptions: { useFingerprints: true },
       requestHandlerTimeoutSecs: 600,
       requestList: await RequestList.open(null, [
-        `https://www.homedepot.com/b/Clearance/N-5yc1vZar4y?NCNI-5&storeSelection=${storeId}`
+        'https://www.homedepot.com/'
       ]),
 
       async requestHandler({ page, log }) {
-        log.info('Setting up GraphQL response interceptor...');
+        log.info('Landing on HD homepage...');
+        await page.waitForLoadState('load');
+        await page.waitForTimeout(5000);
+        log.info('Homepage loaded. Setting up interceptor...');
 
         page.on('response', async (response) => {
           const url = response.url();
@@ -48,7 +51,7 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
                 const regularPrice = item.pricing?.value ?? 0;
                 const originalPrice = item.pricing?.original ?? regularPrice;
                 const price = clearancePrice !== null ? clearancePrice : regularPrice;
-                const pct = item.pricing?.clearance?.percentageOff ?? 
+                const pct = item.pricing?.clearance?.percentageOff ??
                   (originalPrice > 0 && price > 0 ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0);
                 const isPenny = price > 0 && price <= 0.03;
 
@@ -87,21 +90,35 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
                 });
               }
 
-              log.info('Intercepted batch. Total so far: ' + allItems.length);
+              if (products.length > 0) {
+                log.info('Intercepted batch. Total so far: ' + allItems.length);
+              }
             } catch(e) {
-              log.error('Failed to parse intercepted response: ' + e.message);
+              // ignore non-JSON responses
             }
           }
         });
 
-        log.info('Navigating to clearance page for store ' + storeId);
+        // Set store cookies
+        await page.evaluate((storeId) => {
+          const localizerValue = JSON.stringify({
+            WORKFLOW: 'LOC_HISTORY_BY_IP',
+            THD_FORCE_LOC: '1',
+            THD_LOCSTORE: `${storeId}+Moore+-+Moore,+OK+`,
+            THD_STRFINDERZIP: '73160',
+          });
+          document.cookie = `THD_LOCALIZER=${encodeURIComponent(localizerValue)}; domain=.homedepot.com; path=/`;
+          document.cookie = `DELIVERY_ZIP=73160; domain=.homedepot.com; path=/`;
+          document.cookie = `HD_DC=origin; domain=.homedepot.com; path=/`;
+        }, storeId);
+
+        log.info('Navigating to clearance page...');
         await page.goto(
           `https://www.homedepot.com/b/Clearance/N-5yc1vZar4y?NCNI-5&storeSelection=${storeId}`,
           { waitUntil: 'networkidle', timeout: 60000 }
         );
         await page.waitForTimeout(3000);
 
-        // Scroll to trigger lazy loading
         log.info('Scrolling to load more products...');
         for (let i = 0; i < 8; i++) {
           await page.evaluate(() => window.scrollBy(0, window.innerHeight));
