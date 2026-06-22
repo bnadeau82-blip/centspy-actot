@@ -69,6 +69,32 @@ chromium.use(StealthPlugin());
       // Single entry point: homepage. We navigate to each department inside the handler.
       requestList: await RequestList.open(null, ['https://www.homedepot.com/']),
 
+      // Inject real Akamai session cookies BEFORE the first navigation.
+      // These cookies were captured from a real browser session via Reqable.
+      // Akamai sees valid bot-management cookies and skips the JS challenge,
+      // allowing product GraphQL calls to fire normally.
+      // NOTE: Rotate these periodically — _abck and bm_sz expire over time.
+      preNavigationHooks: [
+        async ({ page }) => {
+          const AKAMAI_COOKIES = [
+            { name: '_abck',    value: '30B8719CCFDF9D38F8F207E318C12533~-1~YAAQmA7GFzyQEt2eAQAAKoVM8BBoymrlC9Fddz6XDKI/p/1WHhRUHWHsSG5Z6P71kJftTgNDvh2ZwYG+NYekj+j/MPzCW+MZjrH+fsGv67iwucoZN3QMHt0Dz7kof7DM7Mt8rTakaORLywh6F5QWtV6WFb4QMBLHBo34sqtUbzZf9pC1ltEyxB/XI+PfftwUlXYMCAb+J3j6s+AG9W315L3TrN8jr/3P9yuFY/SvBtrDs1kIuIfX6yP/P74Ol9jDt/c3xFilvvQDO5kUVzYy1u5qjoAV5aW2XHn8CAJW7bMHUyYrYG/lCCGq0pNxA4Rq7uYvhv4JEx8Z1f0gBGOXlFN75Kpm8cZsIh7vlfYoVaf3quklzed7tTTXHy9VMG+0+ZISI39P9EGIY8yy1mBaE5b/60zh4PN6hT7CGrCi48YOiwwJ7bT8byVT1P7VtPe/d5yp9JvBWK3PsLm/mto3tEf/PlHsaiLJhRs5cJbDZKoJsL7RrDxwj303u83iGCIFC8JKQPueqqHD9uCyOJy/eGo3kBKU01X6c7mI0hLDyJAKiHlnhu4heurW9Yt0t9K2KO8+W1r2Ag295ve8ex3/PxBlhM+5nlkDJ88PQ1UxrkE=~-1~-1~-1~AAQAAAAF%2f%2f%2f%2f%2fwtSNj71VBeXttI9WsVwhoRo9Hi96ImGaC2RANpOg1lj5q42bmaZt29U3mmljwgY9QQDLIPkcBrlwat+ChczxFt8AIWEq90Xar9J~-1' },
+            { name: 'bm_sz',   value: '6FAB93C5BE82BF90796B87E506F474DE~YAAQmA7GFz2QEt2eAQAAKoVM8ACre8k2/Mv7TNSIgBikJFAjz/AMyztEOdNAGiuAQDQyzCRNiVuIGjmJ0xKYG2FCCaW1w1nYKpbYRzYxeIdL5jEfdosf0Jx2qQmSX8NiG5fwVjE8fDePsTOjwmw+UEb5HuNPyd/myVSJPPyfgMdQm/WPJv7giWxxLNNw7paXJ3BoNkmEGBk2zPh98hG2xenzSjOeAOSHEQm9Z0rzrea6DMOgL+jhxOeDzcoh835Z3vMeaFnZJvSq/LVdMz+n1KqxMNP94bmMJODsCNJc03k4h9WST1yvW6KmosOwZPB3JQFyx8MzjO+zHzb4qfcIqJZhTZ5tPUK7LVUvscHpKdnSCw0k75iUeLHWKtSjn1MgHv+qhg+mHDYaAmgBI6kVhip68sjl6xHYl4oNsp0/jvHW~3749189~4340022' },
+            { name: 'ak_bmsc', value: '05820277C07010E0E6E5786BB834C422~000000000000000000000000000000~YAAQaHQ2F/R50dKeAQAA4IlJ8ABBJBf/J9G7juHewmw8w2KKB5sQDN2M+EvIq+FtBku80mJvN1S+d+t36+qygo41zQFTTOoP9FWwkZpt/C/mCOpQCPV9BcwuemRY1MaMc2fv5ya6J3AGHJScAVwUAxMdFayMseE/UQoRCAeYbXR/xa2ftazJ0bFt4aLtW/rpAbGqLiRpux5hHtQyg54PVMEJ/CioBDaoHzLwo/0FQ3hooCm6fSO0ypdUjhjNq+ocMYEb/I0oeO5MWkystkNDtRfm2CPiAygDdW53Q5pSNyCczs0TlWEZT+wchYSJ5da+A+Z2lY6Hai6+QnAq/qeicFdbmDTynUOaAA9qv83KqKPVi7DoBvd8AvP+7ad4gYVwJCU7eQsMWfwHXSJ6+aQJL4D19qZxQB0Z9cLVnM5r5zcjpGYC6ooJT/UgDt/a1ExfqgYcMIKpDjcHeNG9h0b94z899SQ4TRcRGkfN9RreYzdnC2YqRQ==' },
+            { name: 'bm_sv',   value: 'ECDF2F0B76778E2654FCC3599D1EC07D~YAAQkw7GFw3bl9CeAQAAOJdM8ACWHHZNhT5kbnUx0TK805dnMvwoctTlcbdtfoAoQ6dEvwejCuGhraCeEIQQZ/G51d77c0K4/S2JVc+1cZWGgnmMGMI5UYFd7fA/M+4scJXzO0P3vd4aa1OEzBg0CEEjGdHxdKIDhwgHfWfAl6SsV0mb8+FotFnH3hDE0m3rqJg90uuvi+YZ6djL4aDuzxxKMhdX3SZEmuDLUcAxlDFy1st3ZKT513bdwoIWaAVauUKH~1' },
+            { name: 'bm_mi',   value: 'C6C13412C2BBA82D0F405EF105898065~YAAQaHQ2Fyhe0dKeAQAA+FdJ8AD2GO0z1/Kxz7nNaaz3xXDUbP5tr/DRPYrYfTUZrVeKOnXNh5rWj4sjLgRtZN3WcijCx3eyWjz5Fhoc+GjndY7F4HkF0Wcda8w5UR+g/SSqDKk4GNTbvt1rKUn0ZbYjJDGorbzcXthenpQbcQSYjza7bpmpJK/DzN1wSsf9hRwV0jUyPc0aas/QGPbqFt8G1Olo0EJgxxCETrHdfJip12u0K2JOYDvMwQeyrISSbhbEorJ9EJENbaHVWZwVLscetQ2tp92nA2VxHG603VSuT+JTwyEEyRbE2mbp1pzo~1' },
+          ];
+
+          await page.context().addCookies(
+            AKAMAI_COOKIES.map(c => ({
+              ...c,
+              domain: '.homedepot.com',
+              path: '/',
+              secure: true,
+            }))
+          );
+        },
+      ],
+
       async requestHandler({ page, log }) {
         log.info('Homepage loaded. Attaching response interceptor...');
 
