@@ -184,6 +184,14 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
             await page.goto(dept.url, { waitUntil: 'networkidle', timeout: 60000 });
             await page.waitForTimeout(3000);
 
+            // Screenshot after first dept load so we can see what Akamai is serving
+            if (dept.name === 'Appliances') {
+              const screenshot = await page.screenshot({ fullPage: false });
+              await Actor.setValue('page-screenshot', screenshot, { contentType: 'image/png' });
+              const title = await page.title();
+              log.info(`[PAGE TITLE] ${title}`);
+            }
+
             // Scroll to trigger lazy product loads
             for (let i = 0; i < 6; i++) {
               await page.evaluate(() => window.scrollBy(0, window.innerHeight));
