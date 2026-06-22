@@ -131,29 +131,29 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
 
           let json;
           try {
-            json = await page.evaluate(async ({ url, query, variables, storeId }) => {
-              const res = await fetch(url, {
-                method: 'POST',
-                headers: {
-                  'content-type': 'application/json',
-                  'accept': '*/*',
-                  'accept-language': 'en-US,en;q=0.9',
-                  'x-experience-name': 'general-merchandise',
-                  'x-api-cookies': `{"x-user-id":"guest"}`,
-                  'x-debug': 'false',
-                  'x-hd-dc': 'origin',
-                  'x-current-url': `/s/clearance`,
-                  'origin': 'https://www.homedepot.com',
-                  'referer': 'https://www.homedepot.com/',
-                  'sec-fetch-site': 'same-site',
-                  'sec-fetch-mode': 'cors',
-                  'sec-fetch-dest': 'empty',
-                },
-                body: JSON.stringify({ query, variables }),
-              });
-              const text = await res.text();
-              return { status: res.status, body: text };
-            }, { url: GRAPHQL_URL, query, variables, storeId });
+            const cookies = await page.context().cookies();
+const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+const apiResponse = await page.request.post(GRAPHQL_URL, {
+  headers: {
+    'content-type': 'application/json',
+    'accept': '*/*',
+    'accept-language': 'en-US,en;q=0.9',
+    'x-experience-name': 'general-merchandise',
+    'x-api-cookies': `{"x-user-id":"guest"}`,
+    'x-debug': 'false',
+    'x-hd-dc': 'origin',
+    'x-current-url': '/s/clearance',
+    'origin': 'https://www.homedepot.com',
+    'referer': 'https://www.homedepot.com/',
+    'sec-fetch-site': 'same-site',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-dest': 'empty',
+    'cookie': cookieHeader,
+  },
+  data: JSON.stringify({ query, variables }),
+});
+json = { status: apiResponse.status(), body: await apiResponse.text() };
 
           } catch (err) {
             log.error('Fetch error: ' + err.message);
