@@ -154,7 +154,7 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
         await page.waitForLoadState('load');
         await page.waitForTimeout(4000);
 
-        await page.evaluate((sid, zip, name, state) => {
+        await page.evaluate(({ sid, zip, name, state }) => {
           const loc = JSON.stringify({
             WORKFLOW: 'LOC_HISTORY_BY_IP',
             THD_FORCE_LOC: '1',
@@ -164,7 +164,7 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
           document.cookie = `THD_LOCALIZER=${encodeURIComponent(loc)}; domain=.homedepot.com; path=/`;
           document.cookie = `DELIVERY_ZIP=${zip}; domain=.homedepot.com; path=/`;
           document.cookie = `HD_DC=origin; domain=.homedepot.com; path=/`;
-        }, storeId, storeZip, storeName, storeState);
+        }, { sid: storeId, zip: storeZip, name: storeName, state: storeState });
 
         log.info('Store cookies set. Cycling through departments...');
 
