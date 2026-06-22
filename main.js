@@ -154,9 +154,31 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
           }
         });
 
-        // Wait for homepage then set store cookies
+        // Wait for homepage — give Akamai sensor script time to complete
         await page.waitForLoadState('load');
-        await page.waitForTimeout(4000);
+
+        // Simulate realistic human behaviour: random mouse movements across the page
+        // Akamai's behavioural scoring watches for interaction patterns
+        log.info('Simulating user behaviour on homepage...');
+        const viewportSize = page.viewportSize() || { width: 1280, height: 800 };
+        for (let i = 0; i < 8; i++) {
+          const x = 100 + Math.random() * (viewportSize.width - 200);
+          const y = 100 + Math.random() * (viewportSize.height - 200);
+          await page.mouse.move(x, y, { steps: 10 });
+          await page.waitForTimeout(500 + Math.random() * 800);
+        }
+
+        // Scroll down and back up slowly, like a real user
+        await page.evaluate(() => window.scrollBy(0, 300));
+        await page.waitForTimeout(1200);
+        await page.evaluate(() => window.scrollBy(0, 200));
+        await page.waitForTimeout(800);
+        await page.evaluate(() => window.scrollBy(0, -100));
+        await page.waitForTimeout(600);
+
+        // Let Akamai sensor fully complete before we navigate away
+        log.info('Waiting for Akamai sensor to complete...');
+        await page.waitForTimeout(15000);
 
         await page.evaluate(({ sid, zip, name, state }) => {
           const loc = JSON.stringify({
@@ -182,15 +204,7 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
           log.info(`--- ${dept.name} ---`);
           try {
             await page.goto(dept.url, { waitUntil: 'networkidle', timeout: 60000 });
-            await page.waitForTimeout(3000);
-
-            // Screenshot after first dept load so we can see what Akamai is serving
-            if (dept.name === 'Appliances') {
-              const screenshot = await page.screenshot({ fullPage: false });
-              await Actor.setValue('page-screenshot', screenshot, { contentType: 'image/png' });
-              const title = await page.title();
-              log.info(`[PAGE TITLE] ${title}`);
-            }
+            await page.waitForTimeout(6000);
 
             // Scroll to trigger lazy product loads
             for (let i = 0; i < 6; i++) {
