@@ -93,12 +93,15 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
       async requestHandler({ page, log }) {
         log.info('Landing on HD homepage to get fresh Akamai cookies...');
 
-        // Wait for full page load so Akamai issues cookies
         await page.waitForLoadState('load');
-        await page.waitForTimeout(3000); // extra settle time for Akamai cookies
-        log.info('Homepage loaded. URL: ' + page.url());
+        await page.waitForTimeout(5000);
 
-        // Set the store cookie so HD knows we want store 3917
+        // Navigate to clearance page to get proper Akamai session
+        await page.goto('https://www.homedepot.com/b/Clearance/N-5yc1vZar4y', { waitUntil: 'load' });
+        await page.waitForTimeout(4000);
+
+        log.info('Clearance page loaded. URL: ' + page.url());
+
         await page.evaluate((storeId) => {
           const localizerValue = JSON.stringify({
             WORKFLOW: 'LOC_HISTORY_BY_IP',
@@ -203,7 +206,6 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
             if (price > maxPrice) continue;
             if (pct < minDiscount) continue;
 
-            // Get store-specific stock
             let stock = 0;
             try {
               const bopis = item.fulfillment?.fulfillmentOptions
