@@ -82,10 +82,12 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
             return;
           }
 
-          try {
-            const ct = response.headers()['content-type'] || '';
-            if (!ct.includes('json')) return;
+          // Diagnostic: log every HD API attempt so we can see what's being parsed
+          if (url.includes('homedepot.com') && !url.includes('.html')) {
+            log.info(`[TRY] ${url.substring(0, 120)}`);
+          }
 
+          try {
             const body = await response.json();
             const products = body?.data?.searchModel?.products;
             if (!products?.length) return;
@@ -146,7 +148,9 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
 
             log.info(`Total captured: ${allItems.length}`);
           } catch (e) {
-            // Non-JSON or parse error — ignore
+            if (url.includes('homedepot.com')) {
+              log.info(`[FAIL] ${url.substring(0, 100)} — ${e.message.substring(0, 60)}`);
+            }
           }
         });
 
