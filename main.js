@@ -86,6 +86,8 @@ Actor.main(async () => {
   // Must be registered BEFORE any goto so we don't miss early calls.
   page.on('response', async (res) => {
     try {
+      if (res.url().includes('homedepot.com')) console.log(`[RES] ${res.status()} ${res.url().split('?')[0]}`);
+      
       // HD fires GraphQL from both apionline.homedepot.com AND www.homedepot.com/federation-gateway
       const url = res.url();
       const isGraphQL =
