@@ -8,6 +8,7 @@
     "start": "node main.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
     "apify": "^3.0.0",
     "crawlee": "^3.0.0",
     "playwright": "^1.40.0",
