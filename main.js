@@ -124,52 +124,33 @@ Actor.main(async () => {
       console.log(`[DEPT] → ${dept.name}`);
 
       try {
-        const anchor = page.locator(`a[href*="${dept.path}"]`).first();
-        const hasAnchor = (await anchor.count()) > 0;
-
-        if (hasAnchor) {
-          // Click the live nav link — lets the React router handle the
-          // transition the same way a real user would.
-          await Promise.all([
-            page
-              .waitForResponse(
-                (r) =>
-                  (r.url().includes('apionline.homedepot.com') ||
-                   r.url().includes('homedepot.com/federation-gateway/graphql')) &&
-                  r.status() === 200,
-                { timeout: 20_000 }
-              )
-              .catch(() => null),
-            anchor.click(),
-          ]);
-        } else {
-          // Fallback: pushState + popstate fires the router without a click.
-          // Less reliable than a real click but covers nav links not in DOM.
-          console.log(`[NAV] No anchor for ${dept.name} — using pushState`);
-          await page.evaluate((path) => {
-            window.history.pushState({}, '', path);
-            window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
-          }, dept.path);
-
-          await page
+        // Session is established from homepage — direct goto works now.
+        await Promise.all([
+          page
             .waitForResponse(
               (r) =>
                 (r.url().includes('apionline.homedepot.com') ||
                  r.url().includes('homedepot.com/federation-gateway/graphql')) &&
                 r.status() === 200,
-              { timeout: 20_000 }
+              { timeout: 25_000 }
             )
-            .catch(() => null);
-        }
+            .catch(() => null),
+          page.goto(`https://www.homedepot.com${dept.path}`, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30_000,
+          }),
+        ]);
 
         // Scroll to trigger intersection-observer lazy loads on the product grid.
-        await page.evaluate(() =>
-          window.scrollTo(0, document.documentElement.scrollHeight / 2)
-        );
+        await page.evaluate(() => {
+          const h = document.documentElement?.scrollHeight || document.body?.scrollHeight || 0;
+          window.scrollTo(0, h / 2);
+        });
         await page.waitForTimeout(1_500);
-        await page.evaluate(() =>
-          window.scrollTo(0, document.documentElement.scrollHeight)
-        );
+        await page.evaluate(() => {
+          const h = document.documentElement?.scrollHeight || document.body?.scrollHeight || 0;
+          window.scrollTo(0, h);
+        });
         await page.waitForTimeout(2_500);
 
         console.log(
