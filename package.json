@@ -1,7 +1,7 @@
 {
   "name": "centspy-actor",
   "version": "0.0.1",
-  "type": "commonjs",
+  "type": "module",
   "description": "CentSpy HD Clearance Scraper",
   "main": "main.js",
   "scripts": {
