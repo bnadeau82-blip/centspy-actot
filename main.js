@@ -11,6 +11,7 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
     const maxResults = input.maxResults || 500;
     const minDiscount = input.minDiscount || 0;
     const maxPrice = input.maxPrice || 999999;
+    const debugMode = input.debugMode || false;
 
     const proxyConfiguration = await Actor.createProxyConfiguration({
       groups: ['RESIDENTIAL'],
@@ -39,7 +40,26 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
 
         page.on('response', async (response) => {
           const url = response.url();
-          if (url.includes('federation-gateway/graphql') && url.includes('searchModel')) {
+
+          // Debug mode: log all HD URLs so we can find the right endpoint
+          if (debugMode) {
+            if (
+              url.includes('homedepot.com') &&
+              !url.includes('.jpg') &&
+              !url.includes('.png') &&
+              !url.includes('.css') &&
+              !url.includes('.js') &&
+              !url.includes('.woff') &&
+              !url.includes('.svg') &&
+              !url.includes('.gif')
+            ) {
+              log.info('URL: ' + url.substring(0, 200));
+            }
+            return;
+          }
+
+          // Production mode: intercept GraphQL search responses
+          if (url.includes('graphql') && url.includes('searchModel')) {
             try {
               const body = await response.json();
               const products = body?.data?.searchModel?.products ?? [];
@@ -110,17 +130,19 @@ const { PlaywrightCrawler, RequestList } = require('crawlee');
           document.cookie = `THD_LOCALIZER=${encodeURIComponent(localizerValue)}; domain=.homedepot.com; path=/`;
           document.cookie = `DELIVERY_ZIP=73160; domain=.homedepot.com; path=/`;
           document.cookie = `HD_DC=origin; domain=.homedepot.com; path=/`;
+          document.cookie = `IN_STORE_API_SESSION=TRUE; domain=.homedepot.com; path=/`;
         }, storeId);
 
-        log.info('Navigating to clearance page...');
+        // Navigate to Appliances department (has real products with clearance tags)
+        log.info('Navigating to Appliances department...');
         await page.goto(
-          `https://www.homedepot.com/b/Clearance/N-5yc1vZar4y?NCNI-5&storeSelection=${storeId}`,
+          'https://www.homedepot.com/b/Appliances/N-5yc1vZc3pl',
           { waitUntil: 'networkidle', timeout: 60000 }
         );
         await page.waitForTimeout(3000);
 
-        log.info('Scrolling to load more products...');
-        for (let i = 0; i < 8; i++) {
+        log.info('Scrolling to trigger product loads...');
+        for (let i = 0; i < 5; i++) {
           await page.evaluate(() => window.scrollBy(0, window.innerHeight));
           await page.waitForTimeout(2000);
         }
