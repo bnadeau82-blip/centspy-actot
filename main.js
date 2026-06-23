@@ -3,7 +3,6 @@ import { chromium } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
-import ws from 'ws';
 import { WebSocket } from 'ws';
 globalThis.WebSocket = WebSocket;
 chromium.use(StealthPlugin());
