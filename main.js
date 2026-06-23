@@ -47,13 +47,13 @@ Actor.main(async () => {
   let itemIds = [];
   if (supabase) {
     const { data, error } = await supabase
-      .from('products')
-      .select('item_id')
+      .from('clearance_items')
+      .select('product_id')
       .eq('store_id', storeId);
     if (error) {
       console.log('[SUPABASE ERR]', error.message);
     } else {
-      itemIds = data.map((r) => r.item_id);
+      itemIds = data.map((r) => r.product_id);
       console.log(`[SUPABASE] ${itemIds.length} item IDs loaded`);
     }
   }
@@ -165,13 +165,11 @@ Actor.main(async () => {
 
           if (isPenny || isClearance) {
             hits.push({
-              store_id:     storeId,
-              item_id:      String(p.itemId),
-              price,
-              was_price:    wasPrice,
-              is_penny:     isPenny,
-              is_clearance: isClearance,
-              updated_at:   new Date().toISOString(),
+              store_id:        storeId,
+              product_id:      String(p.itemId),
+              clearance_price: price,
+              retail_price:    wasPrice,
+              report_date:     new Date().toISOString(),
             });
             console.log(`[HIT] ${isPenny ? 'PENNY' : 'CLEARANCE'} item ${p.itemId} @ $${price}`);
           }
@@ -194,8 +192,8 @@ Actor.main(async () => {
   }
 
   // ── Write results to Supabase ─────────────────────────────────────────────
-  const penny     = hits.filter((h) => h.is_penny).length;
-  const clearance = hits.filter((h) => h.is_clearance).length;
+  const penny     = hits.filter((h) => h.clearance_price <= 0.01).length;
+  const clearance = hits.filter((h) => h.clearance_price > 0.01).length;
   console.log(`[DONE] ${penny} penny | ${clearance} clearance | ${hits.length} total`);
 
   if (supabase && hits.length > 0) {
@@ -203,7 +201,7 @@ Actor.main(async () => {
     for (let i = 0; i < hits.length; i += BATCH) {
       const { error } = await supabase
         .from('products')
-        .upsert(hits.slice(i, i + BATCH), { onConflict: 'store_id,item_id' });
+        .upsert(hits.slice(i, i + BATCH), { onConflict: 'store_id,product_id' });
       if (error) console.log('[SUPABASE ERR]', error.message);
     }
     console.log(`[SUPABASE] Upserted ${hits.length} items`);
