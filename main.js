@@ -196,44 +196,31 @@ Actor.main(async () => {
       const batch = batches[b];
 
       try {
-        // Intercept HD's own mediaPriceInventory call and swap item IDs.
-        // route.fetch() handles proxy auth — page.evaluate fetch cannot.
-        let capturedResult = null;
-
-        await page.route('**/federation-gateway/graphql?opname=mediaPriceInventory', async (route) => {
-          try {
-            const body = JSON.parse(route.request().postData() || '{}');
-            body.variables = {
-              ...body.variables,
-              itemIds: batch,
-              storeId: storeId,
-              excludeInventory: false,
+        const apiRes = await context.request.post(GQL_URL, {
+          headers: {
+            'content-type':          'application/json',
+            'accept':               '*/*',
+            'x-hd-dc':              'origin',
+            'x-experience-name':    'fusion-gm-pip-desktop',
+            'x-debug':              'false',
+            'x-thd-customer-token': '',
+            'x-api-cookies':        '{"tt_search":"pc3","x-user-id":"e0870b1b-dd5d-a000-1b37-845197849209"}',
+            'x-current-url':        `/p/${batch[0]}`,
+            'origin':               'https://www.homedepot.com',
+            'referer':              `https://www.homedepot.com/p/${batch[0]}`,
+          },
+          data: JSON.stringify({
+            operationName: 'mediaPriceInventory',
+            variables: {
+              excludeInventory:              false,
               isBrandPricingPolicyCompliant: false,
-            };
-            const response = await route.fetch({ postData: JSON.stringify(body) });
-            const text = await response.text();
-            capturedResult = { status: response.status(), text };
-            await route.fulfill({ response, body: text });
-          } catch (e) {
-            console.log('[ROUTE ERR]', e.message);
-            await route.continue();
-          }
+              itemIds:                       batch,
+              storeId:                       storeId,
+            },
+            query: GQL_QUERY,
+          }),
         });
-
-        const responsePromise = page.waitForResponse(
-          (r) => r.url().includes('mediaPriceInventory'),
-          { timeout: 20_000 }
-        ).catch(() => null);
-
-        await page.goto(`https://www.homedepot.com/p/${batch[0]}`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 60_000,
-        }).catch(() => null);
-
-        await responsePromise;
-        await page.unrouteAll();
-
-        const result = capturedResult || { status: 0, text: '{}' };
+        const result = { status: apiRes.status(), text: await apiRes.text() };
 
         if (![200, 206].includes(result.status)) {
           console.log(`[BATCH ${b + 1}] HTTP ${result.status} — skipping`);
