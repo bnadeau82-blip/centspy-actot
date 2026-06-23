@@ -138,20 +138,40 @@ Actor.main(async () => {
 
   try {
     // ── Establish session on homepage ────────────────────────────────────────
+    // Intercept BEFORE homepage loads — homepage fires mediaPriceInventory naturally
+    let captured = null;
+    await page.route('**/federation-gateway/graphql?opname=mediaPriceInventory', async (route) => {
+      if (captured) { await route.continue(); return; }
+      try {
+        const body = JSON.parse(route.request().postData() || '{}');
+        console.log('[INTERCEPT] Caught mediaPriceInventory — swapping IDs');
+        body.variables = {
+          ...body.variables,
+          itemIds: itemIds,
+          storeId: storeId,
+          excludeInventory: false,
+          isBrandPricingPolicyCompliant: false,
+        };
+        const response = await route.fetch({ postData: JSON.stringify(body) });
+        const text = await response.text();
+        captured = { status: response.status(), text };
+        console.log('[INTERCEPT] Status:', response.status(), 'body:', text.slice(0, 400));
+        await route.fulfill({ response, body: text });
+      } catch(e) {
+        console.log('[INTERCEPT ERR]', e.message);
+        await route.continue();
+      }
+    });
+
     console.log('[NAV] Loading homepage...');
     await page.goto('https://www.homedepot.com', {
-      waitUntil: 'domcontentloaded',
-      timeout:   90_000,
+      waitUntil: 'networkidle',
+      timeout:   120_000,
     }).catch(() => null);
     await page.waitForTimeout(5_000);
-    console.log('[NAV] Session established');
-    // Navigate to a product page so the API context matches what HD expects
-    await page.goto('https://www.homedepot.com/p/309495334', {
-      waitUntil: 'domcontentloaded',
-      timeout: 20_000,
-    }).catch(() => null);
-    await page.waitForTimeout(3_000);
-    console.log('[NAV] On product page');
+    await page.unrouteAll();
+    console.log('[NAV] Homepage done. Captured:', !!captured);
+    if (captured) console.log('[RESULT]', captured.text.slice(0, 600));
 
     // ── Batch price-check via in-page fetch ───────────────────────────────────
     // Runs inside the browser so all Akamai/PX cookies are sent automatically.
