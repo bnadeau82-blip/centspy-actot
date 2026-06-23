@@ -5,6 +5,7 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
 import { gotScraping } from 'got-scraping';
+import { gotScraping } from 'got-scraping';
 import { WebSocket } from 'ws';
 globalThis.WebSocket = WebSocket;
 chromium.use(StealthPlugin());
