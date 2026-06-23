@@ -97,8 +97,15 @@ Actor.main(async () => {
   }
 
   // ── Launch browser ─────────────────────────────────────────────────────────
+  const proxy = await Actor.createProxyConfiguration({
+    useApifyProxy: true,
+    apifyProxyGroups: ['RESIDENTIAL'],
+  });
+  const proxyUrl = await proxy.newUrl('CENTSPY');
+
   const browser = await chromium.launch({
     headless: true,
+    proxy: { server: proxyUrl },
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
