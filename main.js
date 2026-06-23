@@ -126,6 +126,7 @@ Actor.main(async () => {
         const result = await page.evaluate(
           async ({ url, query, ids, store }) => {
             const res = await fetch(url, {
+              credentials: 'include',
               method: 'POST',
               headers: {
                 'content-type':           'application/json',
