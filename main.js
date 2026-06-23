@@ -165,31 +165,33 @@ Actor.main(async () => {
       const batch = batches[b];
 
       try {
-        const apiRes = await page.request.post(GQL_URL, {
-          headers: {
-            'content-type':          'application/json',
-            'accept':               '*/*',
-            'x-hd-dc':              'origin',
-            'x-experience-name':    'fusion-gm-pip-desktop',
-            'x-debug':              'false',
-            'x-thd-customer-token': '',
-            'x-api-cookies':        '{"tt_search":"pc3","x-user-id":"e0870b1b-dd5d-a000-1b37-845197849209"}',
-            'x-current-url':        `/p/${batch[0]}`,
-            'origin':               'https://www.homedepot.com',
-            'referer':              `https://www.homedepot.com/p/${batch[0]}`,
+        const result = await page.evaluate(
+          async ({ query, ids, store }) => {
+            const res = await fetch('/federation-gateway/graphql?opname=mediaPriceInventory', {
+              method: 'POST',
+              headers: {
+                'content-type':          'application/json',
+                'accept':               '*/*',
+                'x-hd-dc':              'origin',
+                'x-experience-name':    'fusion-gm-pip-desktop',
+                'x-debug':              'false',
+                'x-thd-customer-token': '',
+              },
+              body: JSON.stringify({
+                operationName: 'mediaPriceInventory',
+                variables: {
+                  excludeInventory:              false,
+                  isBrandPricingPolicyCompliant: false,
+                  itemIds:                       ids,
+                  storeId:                       store,
+                },
+                query,
+              }),
+            });
+            return { status: res.status, text: await res.text() };
           },
-          data: JSON.stringify({
-            operationName: 'mediaPriceInventory',
-            variables: {
-              excludeInventory:              false,
-              isBrandPricingPolicyCompliant: false,
-              itemIds:                       batch,
-              storeId:                       storeId,
-            },
-            query: GQL_QUERY,
-          }),
-        });
-        const result = { status: apiRes.status(), text: await apiRes.text() };
+          { query: GQL_QUERY, ids: batch, store: storeId }
+        );
 
         if (![200, 206].includes(result.status)) {
           console.log(`[BATCH ${b + 1}] HTTP ${result.status} — skipping`);
