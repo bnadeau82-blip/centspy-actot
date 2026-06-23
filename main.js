@@ -176,33 +176,44 @@ Actor.main(async () => {
       const batch = batches[b];
 
       try {
-        const result = await page.evaluate(
-          async ({ query, ids, store }) => {
-            const res = await fetch('/federation-gateway/graphql?opname=mediaPriceInventory', {
-              method: 'POST',
-              headers: {
-                'content-type':          'application/json',
-                'accept':               '*/*',
-                'x-hd-dc':              'origin',
-                'x-experience-name':    'fusion-gm-pip-desktop',
-                'x-debug':              'false',
-                'x-thd-customer-token': '',
-              },
-              body: JSON.stringify({
-                operationName: 'mediaPriceInventory',
-                variables: {
-                  excludeInventory:              false,
-                  isBrandPricingPolicyCompliant: false,
-                  itemIds:                       ids,
-                  storeId:                       store,
-                },
-                query,
-              }),
-            });
-            return { status: res.status, text: await res.text() };
-          },
-          { query: GQL_QUERY, ids: batch, store: storeId }
-        );
+        // Intercept HD's own mediaPriceInventory call and swap item IDs.
+        // route.fetch() handles proxy auth — page.evaluate fetch cannot.
+        let capturedResult = null;
+
+        await page.route('**/federation-gateway/graphql?opname=mediaPriceInventory', async (route) => {
+          try {
+            const body = JSON.parse(route.request().postData() || '{}');
+            body.variables = {
+              ...body.variables,
+              itemIds: batch,
+              storeId: storeId,
+              excludeInventory: false,
+              isBrandPricingPolicyCompliant: false,
+            };
+            const response = await route.fetch({ postData: JSON.stringify(body) });
+            const text = await response.text();
+            capturedResult = { status: response.status(), text };
+            await route.fulfill({ response, body: text });
+          } catch (e) {
+            console.log('[ROUTE ERR]', e.message);
+            await route.continue();
+          }
+        });
+
+        const responsePromise = page.waitForResponse(
+          (r) => r.url().includes('mediaPriceInventory'),
+          { timeout: 20_000 }
+        ).catch(() => null);
+
+        await page.goto(`https://www.homedepot.com/p/${batch[0]}`, {
+          waitUntil: 'domcontentloaded',
+          timeout: 60_000,
+        }).catch(() => null);
+
+        await responsePromise;
+        await page.unrouteAll();
+
+        const result = capturedResult || { status: 0, text: '{}' };
 
         if (![200, 206].includes(result.status)) {
           console.log(`[BATCH ${b + 1}] HTTP ${result.status} — skipping`);
