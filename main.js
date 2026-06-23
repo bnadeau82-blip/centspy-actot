@@ -5,41 +5,63 @@ import { createClient } from '@supabase/supabase-js';
 
 chromium.use(StealthPlugin());
 
-// ── Departments to scan ───────────────────────────────────────────────────────
-const DEPARTMENTS = [
-  { name: 'Appliances',         path: '/b/Appliances/N-5yc1vZc3pl' },
-  { name: 'Bath',               path: '/b/Bath/N-5yc1vZbZbv4' },
-  { name: 'Building Materials', path: '/b/Building-Materials/N-5yc1vZar5p' },
-  { name: 'Electrical',         path: '/b/Electrical/N-5yc1vZbvb3' },
-  { name: 'Flooring',           path: '/b/Flooring/N-5yc1vZaq9z' },
-  { name: 'Hardware',           path: '/b/Hardware/N-5yc1vZc2l5' },
-  { name: 'Heating & Cooling',  path: '/b/Heating-Cooling/N-5yc1vZc4mq' },
-  { name: 'Kitchen',            path: '/b/Kitchen/N-5yc1vZbZcp8' },
-  { name: 'Lighting',           path: '/b/Lighting-Ceiling-Fans/N-5yc1vZbvn0' },
-  { name: 'Outdoor Living',     path: '/b/Outdoor-Living/N-5yc1vZbZ1z8' },
-  { name: 'Paint',              path: '/b/Paint/N-5yc1vZaqss' },
-  { name: 'Plumbing',           path: '/b/Plumbing/N-5yc1vZc2l9' },
-  { name: 'Smart Home',         path: '/b/Smart-Home/N-5yc1vZc1nz' },
-  { name: 'Storage',            path: '/b/Storage-Organization/N-5yc1vZc2l7' },
-  { name: 'Tools',              path: '/b/Tools/N-5yc1vZc1wz' },
-];
+const GQL_URL   = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=mediaPriceInventory';
+const GQL_QUERY = `query mediaPriceInventory($excludeInventory: Boolean = false, $isBrandPricingPolicyCompliant: Boolean!, $itemIds: [String!]!, $storeId: String!) {
+  mediaPriceInventory(itemIds: $itemIds, storeId: $storeId, isBrandPricingPolicyCompliant: $isBrandPricingPolicyCompliant) {
+    productDetailsList {
+      itemId
+      pricing(isBrandPricingPolicyCompliant: $isBrandPricingPolicyCompliant) {
+        value
+        original
+        message
+        __typename
+      }
+      storeInventory @skip(if: $excludeInventory) {
+        enableItem
+        totalQuantity
+        __typename
+      }
+      __typename
+    }
+    __typename
+  }
+}`;
 
-// ── Main ──────────────────────────────────────────────────────────────────────
 Actor.main(async () => {
   const input = (await Actor.getInput()) ?? {};
   const {
-    akamaiCookies  = [],
-    storeId        = '3917',
+    akamaiCookies = [],
+    storeId       = '3917',
     supabaseUrl,
     supabaseKey,
-    maxDepartments = DEPARTMENTS.length,
+    batchSize     = 25,   // items per GraphQL request
   } = input;
 
-  const supabase =
-    supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+  const supabase = supabaseUrl && supabaseKey
+    ? createClient(supabaseUrl, supabaseKey)
+    : null;
 
-  // No proxy — removed to rule out 407 proxy auth errors.
-  // Re-enable once datacenter or residential proxy confirmed available.
+  // ── Pull known item IDs from Supabase ──────────────────────────────────────
+  let itemIds = [];
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('products')
+      .select('item_id')
+      .eq('store_id', storeId);
+    if (error) {
+      console.log('[SUPABASE ERR]', error.message);
+    } else {
+      itemIds = data.map((r) => r.item_id);
+      console.log(`[SUPABASE] ${itemIds.length} item IDs loaded`);
+    }
+  }
+
+  if (itemIds.length === 0) {
+    console.log('[DONE] No item IDs to check — add supabaseUrl/supabaseKey to input');
+    return;
+  }
+
+  // ── Launch browser ─────────────────────────────────────────────────────────
   const browser = await chromium.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -47,14 +69,13 @@ Actor.main(async () => {
 
   const context = await browser.newContext({
     userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 ' +
+      '(KHTML, like Gecko) Version/18.5 Safari/605.1.15',
     viewport:   { width: 1440, height: 900 },
     locale:     'en-US',
     timezoneId: 'America/Chicago',
   });
 
-  // Inject cookies BEFORE opening any page.
   if (akamaiCookies.length > 0) {
     await context.addCookies(
       akamaiCookies.map((c) => ({
@@ -68,158 +89,129 @@ Actor.main(async () => {
       }))
     );
     console.log(`[COOKIES] Injected ${akamaiCookies.length} cookies`);
-  } else {
-    console.log('[COOKIES] None provided');
   }
 
-  const page      = await context.newPage();
-  const collected = [];
-
-  // ── Response interceptor ─────────────────────────────────────────────────
-  page.on('response', async (res) => {
-    try {
-      const url = res.url();
-
-      // Debug: log all HD responses so we can see status codes
-      if (url.includes('homedepot.com')) {
-        console.log(`[RES] ${res.status()} ${url.split('?')[0]}`);
-      }
-
-      const isGraphQL =
-        url.includes('apionline.homedepot.com') ||
-        url.includes('homedepot.com/federation-gateway/graphql');
-      if (!isGraphQL) return;
-      if (![200,206].includes(res.status())) return;
-      if (!(res.headers()['content-type'] ?? '').includes('application/json')) return;
-
-      const body     = await res.json().catch(() => null);
-      const products = body?.data?.searchModel?.products;
-      if (!Array.isArray(products)) return;
-
-      console.log(`[HIT] ${products.length} products from GraphQL`);
-      for (const p of products) {
-        const item = parseProduct(p, storeId);
-        if (item) collected.push(item);
-      }
-    } catch { /* silent */ }
-  });
+  const page    = await context.newPage();
+  const hits    = [];
 
   try {
-    // ── 1. Load homepage ─────────────────────────────────────────────────
+    // ── Establish session on homepage ────────────────────────────────────────
     console.log('[NAV] Loading homepage...');
     await page.goto('https://www.homedepot.com', {
       waitUntil: 'domcontentloaded',
       timeout:   30_000,
     });
-    console.log('[NAV] Homepage ready');
+    await page.waitForTimeout(5_000);
+    console.log('[NAV] Session established');
 
-    // ── 2. Navigate each department ───────────────────────────────────────
-    const depts = DEPARTMENTS.slice(0, maxDepartments);
+    // ── Batch price-check via in-page fetch ───────────────────────────────────
+    // Runs inside the browser so all Akamai/PX cookies are sent automatically.
+    const batches = [];
+    for (let i = 0; i < itemIds.length; i += batchSize) {
+      batches.push(itemIds.slice(i, i + batchSize));
+    }
+    console.log(`[CHECK] ${itemIds.length} items across ${batches.length} batches`);
 
-    for (const dept of depts) {
-      const before = collected.length;
-      console.log(`[DEPT] → ${dept.name}`);
+    for (let b = 0; b < batches.length; b++) {
+      const batch = batches[b];
 
       try {
-        // Fire navigation without blocking — Akamai may stall DOMContentLoaded
-        // but GraphQL calls can still fire during the load.
-        page.goto(`https://www.homedepot.com${dept.path}`, {
-          waitUntil: 'commit',
-          timeout:   15_000,
-        }).catch(() => null);
+        const result = await page.evaluate(
+          async ({ url, query, ids, store }) => {
+            const res = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'content-type':           'application/json',
+                'x-hd-dc':               'origin',
+                'x-experience-name':     'fusion-gm-pip-desktop',
+                'x-debug':               'false',
+                'x-thd-customer-token':  '',
+                'origin':                'https://www.homedepot.com',
+                'referer':               'https://www.homedepot.com/',
+              },
+              body: JSON.stringify({
+                operationName: 'mediaPriceInventory',
+                variables: {
+                  excludeInventory:              false,
+                  isBrandPricingPolicyCompliant: false,
+                  itemIds:                       ids,
+                  storeId:                       store,
+                },
+                query,
+              }),
+            });
+            return { status: res.status, text: await res.text() };
+          },
+          { url: GQL_URL, query: GQL_QUERY, ids: batch, store: storeId }
+        );
 
-        await page
-          .waitForResponse(
-            (r) =>
-              (r.url().includes('apionline.homedepot.com') ||
-               r.url().includes('homedepot.com/federation-gateway/graphql')) &&
-              [200,206].includes(r.status()),
-            { timeout: 25_000 }
-          )
-          .catch(() => null);
+        if (![200, 206].includes(result.status)) {
+          console.log(`[BATCH ${b + 1}] HTTP ${result.status} — skipping`);
+          continue;
+        }
 
-        // Scroll to trigger lazy-loaded product grid
-        await page.evaluate(() => {
-          const h = document.documentElement?.scrollHeight || document.body?.scrollHeight || 0;
-          window.scrollTo(0, h / 2);
-        });
-        await page.waitForTimeout(1_500);
-        await page.evaluate(() => {
-          const h = document.documentElement?.scrollHeight || document.body?.scrollHeight || 0;
-          window.scrollTo(0, h);
-        });
-        await page.waitForTimeout(2_500);
+        const body     = JSON.parse(result.text);
+        const products = body?.data?.mediaPriceInventory?.productDetailsList ?? [];
 
-        console.log(`[DEPT] ${dept.name}: +${collected.length - before} (total ${collected.length})`);
+        for (const p of products) {
+          const price    = p.pricing?.value    ?? null;
+          const wasPrice = p.pricing?.original ?? null;
+          if (price === null) continue;
+
+          const isPenny     = price <= 0.01;
+          const isClearance = wasPrice !== null && wasPrice > 0 && price < wasPrice * 0.6;
+
+          if (isPenny || isClearance) {
+            hits.push({
+              store_id:     storeId,
+              item_id:      String(p.itemId),
+              price,
+              was_price:    wasPrice,
+              is_penny:     isPenny,
+              is_clearance: isClearance,
+              updated_at:   new Date().toISOString(),
+            });
+            console.log(`[HIT] ${isPenny ? 'PENNY' : 'CLEARANCE'} item ${p.itemId} @ $${price}`);
+          }
+        }
+
+        if ((b + 1) % 20 === 0) {
+          console.log(`[PROGRESS] ${b + 1}/${batches.length} batches — ${hits.length} hits`);
+        }
+
+        // Polite delay
+        await page.waitForTimeout(300);
+
       } catch (e) {
-        console.log(`[ERR] ${dept.name}: ${e.message}`);
+        console.log(`[BATCH ${b + 1} ERR] ${e.message}`);
       }
     }
+
   } finally {
     await browser.close();
   }
 
-  console.log(`[DONE] ${collected.length} items collected`);
+  // ── Write results to Supabase ─────────────────────────────────────────────
+  const penny     = hits.filter((h) => h.is_penny).length;
+  const clearance = hits.filter((h) => h.is_clearance).length;
+  console.log(`[DONE] ${penny} penny | ${clearance} clearance | ${hits.length} total`);
 
-  if (supabase && collected.length > 0) {
-    await upsertToSupabase(supabase, collected);
+  if (supabase && hits.length > 0) {
+    const BATCH = 500;
+    for (let i = 0; i < hits.length; i += BATCH) {
+      const { error } = await supabase
+        .from('products')
+        .upsert(hits.slice(i, i + BATCH), { onConflict: 'store_id,item_id' });
+      if (error) console.log('[SUPABASE ERR]', error.message);
+    }
+    console.log(`[SUPABASE] Upserted ${hits.length} items`);
   }
 
   await Actor.setValue('SUMMARY', {
     storeId,
-    total:     collected.length,
+    penny,
+    clearance,
+    total: hits.length,
     timestamp: new Date().toISOString(),
   });
 });
-
-// ── Parse one GraphQL product node ────────────────────────────────────────────
-function parseProduct(p, storeId) {
-  try {
-    const pricing = p.pricing     ?? {};
-    const ids     = p.identifiers ?? {};
-
-    const price    = pricing.value    ?? pricing.original ?? null;
-    const wasPrice = pricing.original ?? null;
-    const itemId   = ids.itemId       ?? ids.storeSkuNumber ?? null;
-
-    if (!itemId || price === null) return null;
-
-    const isPenny     = price <= 0.01;
-    const isClearance =
-      String(pricing.promotionTag ?? '').toLowerCase().includes('clearance') ||
-      (wasPrice !== null && wasPrice > 0 && price < wasPrice * 0.6);
-
-    if (!isPenny && !isClearance) return null;
-
-    return {
-      store_id:     String(storeId),
-      item_id:      String(itemId),
-      model_number: ids.modelNumber  ?? null,
-      brand:        ids.brandName    ?? null,
-      description:  ids.productLabel ?? null,
-      price,
-      was_price:    wasPrice,
-      is_penny:     isPenny,
-      is_clearance: isClearance,
-      updated_at:   new Date().toISOString(),
-    };
-  } catch {
-    return null;
-  }
-}
-
-// ── Supabase upsert in 500-row batches ────────────────────────────────────────
-async function upsertToSupabase(supabase, items) {
-  const BATCH = 500;
-  for (let i = 0; i < items.length; i += BATCH) {
-    const { error } = await supabase
-      .from('products')
-      .upsert(items.slice(i, i + BATCH), { onConflict: 'store_id,item_id' });
-
-    if (error) {
-      console.log(`[SUPABASE ERR] ${error.message}`);
-    } else {
-      console.log(`[SUPABASE] Upserted rows ${i + 1}–${Math.min(i + BATCH, items.length)}`);
-    }
-  }
-}
