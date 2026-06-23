@@ -165,35 +165,31 @@ Actor.main(async () => {
       const batch = batches[b];
 
       try {
-        const result = await page.evaluate(
-          async ({ url, query, ids, store }) => {
-            const res = await fetch(url, {
-              credentials: 'include',
-              method: 'POST',
-              headers: {
-                'content-type':           'application/json',
-                'x-hd-dc':               'origin',
-                'x-experience-name':     'fusion-gm-pip-desktop',
-                'x-debug':               'false',
-                'x-thd-customer-token':  '',
-                'origin':                'https://www.homedepot.com',
-                'referer':               'https://www.homedepot.com/',
-              },
-              body: JSON.stringify({
-                operationName: 'mediaPriceInventory',
-                variables: {
-                  excludeInventory:              false,
-                  isBrandPricingPolicyCompliant: false,
-                  itemIds:                       ids,
-                  storeId:                       store,
-                },
-                query,
-              }),
-            });
-            return { status: res.status, text: await res.text() };
+        const apiRes = await page.request.post(GQL_URL, {
+          headers: {
+            'content-type':          'application/json',
+            'accept':               '*/*',
+            'x-hd-dc':              'origin',
+            'x-experience-name':    'fusion-gm-pip-desktop',
+            'x-debug':              'false',
+            'x-thd-customer-token': '',
+            'x-api-cookies':        '{"tt_search":"pc3","x-user-id":"e0870b1b-dd5d-a000-1b37-845197849209"}',
+            'x-current-url':        `/p/${batch[0]}`,
+            'origin':               'https://www.homedepot.com',
+            'referer':              `https://www.homedepot.com/p/${batch[0]}`,
           },
-          { url: GQL_URL, query: GQL_QUERY, ids: batch, store: storeId }
-        );
+          data: JSON.stringify({
+            operationName: 'mediaPriceInventory',
+            variables: {
+              excludeInventory:              false,
+              isBrandPricingPolicyCompliant: false,
+              itemIds:                       batch,
+              storeId:                       storeId,
+            },
+            query: GQL_QUERY,
+          }),
+        });
+        const result = { status: apiRes.status(), text: await apiRes.text() };
 
         if (![200, 206].includes(result.status)) {
           console.log(`[BATCH ${b + 1}] HTTP ${result.status} — skipping`);
