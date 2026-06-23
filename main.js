@@ -7,7 +7,7 @@ import { WebSocket } from 'ws';
 globalThis.WebSocket = WebSocket;
 chromium.use(StealthPlugin());
 
-const GQL_URL   = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=mediaPriceInventory';
+const GQL_URL   = 'https://www.homedepot.com/federation-gateway/graphql?opname=mediaPriceInventory';
 const GQL_QUERY = `query mediaPriceInventory($excludeInventory: Boolean = false, $isBrandPricingPolicyCompliant: Boolean!, $itemIds: [String!]!, $storeId: String!) {
   mediaPriceInventory(
     itemIds: $itemIds
