@@ -13,6 +13,7 @@
     "crawlee": "^3.0.0",
     "playwright": "^1.40.0",
     "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ws": "^8.21.0"
   }
 }
