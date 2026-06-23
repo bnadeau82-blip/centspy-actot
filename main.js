@@ -153,7 +153,7 @@ Actor.main(async () => {
           continue;
         }
 
-        if (b === 0) console.log('[DEBUG] First batch status:', result.status, 'sample:', result.text.slice(0, 300));
+        if (b === 0) console.log('[DEBUG] First batch IDs:', JSON.stringify(batch.slice(0,5)), 'status:', result.status, 'response:', result.text.slice(0, 300));
         const body     = JSON.parse(result.text);
         const products = body?.data?.mediaPriceInventory?.productDetailsList ?? [];
 
