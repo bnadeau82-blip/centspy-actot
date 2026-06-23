@@ -59,6 +59,10 @@ Actor.main(async () => {
     }
   }
 
+  // TEST: override with known-good IDs from Reqable capture
+  itemIds = ["334452111","313784050","309468737","309495334","315478266","317071726","312170752","323501635","312170806","334452082","325665542"];
+  console.log('[TEST] Using hardcoded known-good IDs:', itemIds.length);
+
   if (itemIds.length === 0) {
     console.log('[DONE] No item IDs to check — add supabaseUrl/supabaseKey to input');
     return;
