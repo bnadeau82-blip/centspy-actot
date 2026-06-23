@@ -49,7 +49,8 @@ Actor.main(async () => {
     const { data, error } = await supabase
       .from('clearance_items')
       .select('product_id')
-      .eq('store_id', storeId);
+      .eq('store_id', storeId)
+      .limit(10000);
     if (error) {
       console.log('[SUPABASE ERR]', error.message);
     } else {
@@ -152,6 +153,7 @@ Actor.main(async () => {
           continue;
         }
 
+        if (b === 0) console.log('[DEBUG] First batch status:', result.status, 'sample:', result.text.slice(0, 300));
         const body     = JSON.parse(result.text);
         const products = body?.data?.mediaPriceInventory?.productDetailsList ?? [];
 
