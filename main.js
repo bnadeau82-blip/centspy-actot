@@ -9,13 +9,41 @@ chromium.use(StealthPlugin());
 
 const GQL_URL   = 'https://apionline.homedepot.com/federation-gateway/graphql?opname=mediaPriceInventory';
 const GQL_QUERY = `query mediaPriceInventory($excludeInventory: Boolean = false, $isBrandPricingPolicyCompliant: Boolean!, $itemIds: [String!]!, $storeId: String!) {
-  mediaPriceInventory(itemIds: $itemIds, storeId: $storeId, isBrandPricingPolicyCompliant: $isBrandPricingPolicyCompliant) {
+  mediaPriceInventory(
+    itemIds: $itemIds
+    storeId: $storeId
+    isBrandPricingPolicyCompliant: $isBrandPricingPolicyCompliant
+  ) {
     productDetailsList {
       itemId
+      imageLocation
+      onlineInventory @skip(if: $excludeInventory) {
+        enableItem
+        totalQuantity
+        __typename
+      }
       pricing(isBrandPricingPolicyCompliant: $isBrandPricingPolicyCompliant) {
+        alternate {
+          unit {
+            value
+            caseUnitOfMeasure
+            __typename
+          }
+          __typename
+        }
         value
+        unitOfMeasure
         original
         message
+        mapAboveOriginalPrice
+        mapDetail {
+          percentageOff
+          dollarOff
+          mapPolicy
+          mapOriginalPriceViolation
+          mapSpecialPriceViolation
+          __typename
+        }
         __typename
       }
       storeInventory @skip(if: $excludeInventory) {
@@ -110,6 +138,13 @@ Actor.main(async () => {
     });
     await page.waitForTimeout(5_000);
     console.log('[NAV] Session established');
+    // Navigate to a product page so the API context matches what HD expects
+    await page.goto('https://www.homedepot.com/p/309495334', {
+      waitUntil: 'domcontentloaded',
+      timeout: 20_000,
+    }).catch(() => null);
+    await page.waitForTimeout(3_000);
+    console.log('[NAV] On product page');
 
     // ── Batch price-check via in-page fetch ───────────────────────────────────
     // Runs inside the browser so all Akamai/PX cookies are sent automatically.
