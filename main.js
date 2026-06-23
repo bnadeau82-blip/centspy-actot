@@ -159,6 +159,17 @@ Actor.main(async () => {
     for (let i = 0; i < itemIds.length; i += batchSize) {
       batches.push(itemIds.slice(i, i + batchSize));
     }
+    // Diagnose page state before fetching
+    const pageState = await page.evaluate(async () => {
+      try {
+        const r = await fetch('/');
+        return { url: window.location.href, fetchOk: true, fetchStatus: r.status };
+      } catch(e) {
+        return { url: window.location.href, fetchOk: false, fetchError: e.message };
+      }
+    });
+    console.log('[PAGE STATE]', JSON.stringify(pageState));
+
     console.log(`[CHECK] ${itemIds.length} items across ${batches.length} batches`);
 
     for (let b = 0; b < batches.length; b++) {
