@@ -120,20 +120,9 @@ Actor.main(async () => {
     timezoneId: 'America/Chicago',
   });
 
-  if (akamaiCookies.length > 0) {
-    await context.addCookies(
-      akamaiCookies.map((c) => ({
-        name:     c.name,
-        value:    c.value,
-        domain:   c.domain   ?? '.homedepot.com',
-        path:     c.path     ?? '/',
-        httpOnly: c.httpOnly ?? false,
-        secure:   c.secure   ?? true,
-        sameSite: c.sameSite ?? 'Lax',
-      }))
-    );
-    console.log(`[COOKIES] Injected ${akamaiCookies.length} cookies`);
-  }
+  // No cookie injection — let Akamai set fresh cookies via residential proxy.
+  // Injected cookies cause TLS fingerprint mismatch on API calls.
+  console.log('[COOKIES] Skipping injection — using fresh residential session');
 
   const page    = await context.newPage();
   const hits    = [];
@@ -180,13 +169,12 @@ Actor.main(async () => {
 
   try {
     // ── Establish session on homepage ────────────────────────────────────────
-    // Intercept BEFORE homepage loads — homepage fires mediaPriceInventory naturally
-    let captured = null;
-    await page.route('**/federation-gateway/graphql?opname=mediaPriceInventory', async (route) => {
-      if (captured) { await route.continue(); return; }
+    // Fresh residential session — intercept product page's natural mediaPriceInventory call.
+    // route.fetch() runs in Node.js, handles proxy auth automatically.
+    await page.route('**/graphql?opname=mediaPriceInventory', async (route) => {
       try {
         const body = JSON.parse(route.request().postData() || '{}');
-        console.log('[INTERCEPT] Caught mediaPriceInventory — swapping IDs');
+        console.log('[INTERCEPT] mediaPriceInventory fired — swapping IDs');
         body.variables = {
           ...body.variables,
           itemIds: itemIds,
@@ -196,8 +184,7 @@ Actor.main(async () => {
         };
         const response = await route.fetch({ postData: JSON.stringify(body) });
         const text = await response.text();
-        captured = { status: response.status(), text };
-        console.log('[INTERCEPT] Status:', response.status(), 'body:', text.slice(0, 400));
+        console.log('[INTERCEPT] Status:', response.status(), 'body:', text.slice(0, 600));
         await route.fulfill({ response, body: text });
       } catch(e) {
         console.log('[INTERCEPT ERR]', e.message);
@@ -207,13 +194,19 @@ Actor.main(async () => {
 
     console.log('[NAV] Loading homepage...');
     await page.goto('https://www.homedepot.com', {
-      waitUntil: 'networkidle',
-      timeout:   120_000,
+      waitUntil: 'domcontentloaded',
+      timeout: 90_000,
     }).catch(() => null);
-    await page.waitForTimeout(5_000);
+    await page.waitForTimeout(3_000);
+    console.log('[NAV] Homepage ready — navigating to product page');
+
+    await page.goto('https://www.homedepot.com/p/309495334', {
+      waitUntil: 'domcontentloaded',
+      timeout: 60_000,
+    }).catch(() => null);
+    await page.waitForTimeout(8_000);
+    console.log('[NAV] Product page done');
     await page.unrouteAll();
-    console.log('[NAV] Homepage done. Captured:', !!captured);
-    if (captured) console.log('[RESULT]', captured.text.slice(0, 600));
 
     // ── Batch price-check via in-page fetch ───────────────────────────────────
     // Runs inside the browser so all Akamai/PX cookies are sent automatically.
