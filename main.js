@@ -1,4 +1,5 @@
 import { Actor } from 'apify';
+import { request as pwRequest } from 'playwright-extra';
 import { chromium } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { createClient } from '@supabase/supabase-js';
@@ -196,19 +197,33 @@ Actor.main(async () => {
       const batch = batches[b];
 
       try {
-        const apiRes = await context.request.post(GQL_URL, {
-          headers: {
-            'content-type':          'application/json',
-            'accept':               '*/*',
-            'x-hd-dc':              'origin',
-            'x-experience-name':    'fusion-gm-pip-desktop',
-            'x-debug':              'false',
-            'x-thd-customer-token': '',
-            'x-api-cookies':        '{"tt_search":"pc3","x-user-id":"e0870b1b-dd5d-a000-1b37-845197849209"}',
-            'x-current-url':        `/p/${batch[0]}`,
-            'origin':               'https://www.homedepot.com',
-            'referer':              `https://www.homedepot.com/p/${batch[0]}`,
+        // Parse proxy URL for explicit credentials
+        const pUrl = new URL(proxyUrl);
+        const liveCookies = await context.cookies(['https://www.homedepot.com', 'https://apionline.homedepot.com']);
+        const cookieStr = liveCookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+        const { request: pwReq } = await import('playwright');
+        const apiCtx = await pwReq.newContext({
+          proxy: {
+            server: `${pUrl.protocol}//${pUrl.host}`,
+            username: decodeURIComponent(pUrl.username),
+            password: decodeURIComponent(pUrl.password),
           },
+          extraHTTPHeaders: {
+            'cookie':                cookieStr,
+            'content-type':         'application/json',
+            'accept':               '*/*',
+            'x-hd-dc':             'origin',
+            'x-experience-name':   'fusion-gm-pip-desktop',
+            'x-debug':             'false',
+            'x-thd-customer-token': '',
+            'x-api-cookies':       '{"tt_search":"pc3","x-user-id":"e0870b1b-dd5d-a000-1b37-845197849209"}',
+            'x-current-url':       `/p/${batch[0]}`,
+            'origin':              'https://www.homedepot.com',
+            'referer':             `https://www.homedepot.com/p/${batch[0]}`,
+          },
+        });
+        const apiRes = await apiCtx.post(GQL_URL, {
           data: JSON.stringify({
             operationName: 'mediaPriceInventory',
             variables: {
@@ -221,6 +236,7 @@ Actor.main(async () => {
           }),
         });
         const result = { status: apiRes.status(), text: await apiRes.text() };
+        await apiCtx.dispose();
 
         if (![200, 206].includes(result.status)) {
           console.log(`[BATCH ${b + 1}] HTTP ${result.status} — skipping`);
