@@ -138,6 +138,46 @@ Actor.main(async () => {
   const page    = await context.newPage();
   const hits    = [];
 
+  // Expose Node.js HTTP function to browser — bypasses proxy auth issue in page.evaluate
+  await page.exposeFunction('__hdFetch', async (ids, store) => {
+    const liveCookies = await context.cookies(['https://www.homedepot.com']);
+    const cookieStr = liveCookies.map(c => `${c.name}=${c.value}`).join('; ');
+    try {
+      const res = await gotScraping({
+        url: GQL_URL,
+        method: 'POST',
+        proxyUrl,
+        headers: {
+          'content-type':          'application/json',
+          'accept':               '*/*',
+          'x-hd-dc':             'origin',
+          'x-experience-name':   'fusion-gm-pip-desktop',
+          'x-debug':             'false',
+          'x-thd-customer-token': '',
+          'x-api-cookies':       '{"tt_search":"pc3","x-user-id":"e0870b1b-dd5d-a000-1b37-845197849209"}',
+          'origin':              'https://www.homedepot.com',
+          'referer':             'https://www.homedepot.com/',
+          'cookie':              cookieStr,
+        },
+        body: JSON.stringify({
+          operationName: 'mediaPriceInventory',
+          variables: {
+            excludeInventory: false,
+            isBrandPricingPolicyCompliant: false,
+            itemIds: ids,
+            storeId: store,
+          },
+          query: GQL_QUERY,
+        }),
+        responseType: 'text',
+        throwHttpErrors: false,
+      });
+      return { status: res.statusCode, text: res.body };
+    } catch(e) {
+      return { status: 0, text: e.message };
+    }
+  });
+
   try {
     // ── Establish session on homepage ────────────────────────────────────────
     // Intercept BEFORE homepage loads — homepage fires mediaPriceInventory naturally
@@ -198,42 +238,11 @@ Actor.main(async () => {
       const batch = batches[b];
 
       try {
-        // Get live cookies from the browser session
-        const liveCookies = await context.cookies(['https://www.homedepot.com']);
-        const cookieStr = liveCookies.map(c => `${c.name}=${c.value}`).join('; ');
-
-        // got-scraping uses browser TLS fingerprint to bypass Akamai 403s
-        const gsRes = await gotScraping({
-          url: GQL_URL,
-          method: 'POST',
-          proxyUrl,
-          headers: {
-            'content-type':          'application/json',
-            'accept':               '*/*',
-            'x-hd-dc':             'origin',
-            'x-experience-name':   'fusion-gm-pip-desktop',
-            'x-debug':             'false',
-            'x-thd-customer-token': '',
-            'x-api-cookies':       '{"tt_search":"pc3","x-user-id":"e0870b1b-dd5d-a000-1b37-845197849209"}',
-            'x-current-url':       `/p/${batch[0]}`,
-            'origin':              'https://www.homedepot.com',
-            'referer':             `https://www.homedepot.com/p/${batch[0]}`,
-            'cookie':              cookieStr,
-          },
-          body: JSON.stringify({
-            operationName: 'mediaPriceInventory',
-            variables: {
-              excludeInventory:              false,
-              isBrandPricingPolicyCompliant: false,
-              itemIds:                       batch,
-              storeId:                       storeId,
-            },
-            query: GQL_QUERY,
-          }),
-          responseType: 'text',
-          throwHttpErrors: false,
-        });
-        const result = { status: gsRes.statusCode, text: gsRes.body };
+        // Call Node.js via exposeFunction — proxy auth handled in Node, not browser JS
+        const result = await page.evaluate(
+          async ({ ids, store }) => await window.__hdFetch(ids, store),
+          { ids: batch, store: storeId }
+        );
 
         if (![200, 206].includes(result.status)) {
           console.log(`[BATCH ${b + 1}] HTTP ${result.status} — skipping`);
