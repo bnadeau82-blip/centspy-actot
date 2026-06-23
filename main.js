@@ -89,7 +89,7 @@ Actor.main(async () => {
         url.includes('apionline.homedepot.com') ||
         url.includes('homedepot.com/federation-gateway/graphql');
       if (!isGraphQL) return;
-      if (res.status() !== 200) return;
+      if (![200,206].includes(res.status())) return;
       if (!(res.headers()['content-type'] ?? '').includes('application/json')) return;
 
       const body     = await res.json().catch(() => null);
@@ -108,8 +108,8 @@ Actor.main(async () => {
     // ── 1. Load homepage ─────────────────────────────────────────────────
     console.log('[NAV] Loading homepage...');
     await page.goto('https://www.homedepot.com', {
-      waitUntil: 'networkidle',
-      timeout:   60_000,
+      waitUntil: 'domcontentloaded',
+      timeout:   30_000,
     });
     console.log('[NAV] Homepage ready');
 
@@ -133,7 +133,7 @@ Actor.main(async () => {
             (r) =>
               (r.url().includes('apionline.homedepot.com') ||
                r.url().includes('homedepot.com/federation-gateway/graphql')) &&
-              r.status() === 200,
+              [200,206].includes(r.status()),
             { timeout: 25_000 }
           )
           .catch(() => null);
