@@ -141,8 +141,8 @@ Actor.main(async () => {
     console.log('[NAV] Loading homepage...');
     await page.goto('https://www.homedepot.com', {
       waitUntil: 'domcontentloaded',
-      timeout:   30_000,
-    });
+      timeout:   90_000,
+    }).catch(() => null);
     await page.waitForTimeout(5_000);
     console.log('[NAV] Session established');
     // Navigate to a product page so the API context matches what HD expects
