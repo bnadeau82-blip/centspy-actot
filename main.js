@@ -4,6 +4,7 @@ import { chromium } from 'playwright-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { createClient } from '@supabase/supabase-js';
 import ws from 'ws';
+import { gotScraping } from 'got-scraping';
 import { WebSocket } from 'ws';
 globalThis.WebSocket = WebSocket;
 chromium.use(StealthPlugin());
@@ -197,21 +198,17 @@ Actor.main(async () => {
       const batch = batches[b];
 
       try {
-        // Parse proxy URL for explicit credentials
-        const pUrl = new URL(proxyUrl);
-        const liveCookies = await context.cookies(['https://www.homedepot.com', 'https://apionline.homedepot.com']);
+        // Get live cookies from the browser session
+        const liveCookies = await context.cookies(['https://www.homedepot.com']);
         const cookieStr = liveCookies.map(c => `${c.name}=${c.value}`).join('; ');
 
-        const { request: pwReq } = await import('playwright');
-        const apiCtx = await pwReq.newContext({
-          proxy: {
-            server: `${pUrl.protocol}//${pUrl.host}`,
-            username: decodeURIComponent(pUrl.username),
-            password: decodeURIComponent(pUrl.password),
-          },
-          extraHTTPHeaders: {
-            'cookie':                cookieStr,
-            'content-type':         'application/json',
+        // got-scraping uses browser TLS fingerprint to bypass Akamai 403s
+        const gsRes = await gotScraping({
+          url: GQL_URL,
+          method: 'POST',
+          proxyUrl,
+          headers: {
+            'content-type':          'application/json',
             'accept':               '*/*',
             'x-hd-dc':             'origin',
             'x-experience-name':   'fusion-gm-pip-desktop',
@@ -221,10 +218,9 @@ Actor.main(async () => {
             'x-current-url':       `/p/${batch[0]}`,
             'origin':              'https://www.homedepot.com',
             'referer':             `https://www.homedepot.com/p/${batch[0]}`,
+            'cookie':              cookieStr,
           },
-        });
-        const apiRes = await apiCtx.post(GQL_URL, {
-          data: JSON.stringify({
+          body: JSON.stringify({
             operationName: 'mediaPriceInventory',
             variables: {
               excludeInventory:              false,
@@ -234,9 +230,10 @@ Actor.main(async () => {
             },
             query: GQL_QUERY,
           }),
+          responseType: 'text',
+          throwHttpErrors: false,
         });
-        const result = { status: apiRes.status(), text: await apiRes.text() };
-        await apiCtx.dispose();
+        const result = { status: gsRes.statusCode, text: gsRes.body };
 
         if (![200, 206].includes(result.status)) {
           console.log(`[BATCH ${b + 1}] HTTP ${result.status} — skipping`);
