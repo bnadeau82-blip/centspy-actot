@@ -124,8 +124,22 @@ Actor.main(async () => {
   // Injected cookies cause TLS fingerprint mismatch on API calls.
   console.log('[COOKIES] Skipping injection — using fresh residential session');
 
-  const page    = await context.newPage();
-  const hits    = [];
+  const page = await context.newPage();
+  const hits = [];
+
+  // Log ALL requests to see if JS is executing at all
+  page.on('request', (req) => {
+    const url = req.url();
+    if (url.includes('graphql') || url.includes('federation') || url.includes('apionline')) {
+      console.log('[REQ]', req.method(), url.slice(0, 120));
+    }
+  });
+  page.on('response', (res) => {
+    const url = res.url();
+    if (url.includes('graphql') || url.includes('federation') || url.includes('apionline')) {
+      console.log('[RES]', res.status(), url.slice(0, 120));
+    }
+  });
 
   // Expose Node.js HTTP function to browser — bypasses proxy auth issue in page.evaluate
   await page.exposeFunction('__hdFetch', async (ids, store) => {
